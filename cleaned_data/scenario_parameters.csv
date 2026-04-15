@@ -1,0 +1,5 @@
+﻿scenario_id,description,demand_growth_rate,renewable_target,carbon_price
+baseline,基准情景,0.05,0.5,50
+high_growth,高速增长情景,0.08,0.6,80
+low_growth,低速增长情景,0.02,0.4,30
+renewable_focus,可再生能源重点发展情景,0.06,0.7,100
