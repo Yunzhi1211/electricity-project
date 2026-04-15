@@ -9,30 +9,26 @@
 ```
 wholepackage/
 ├── 0_raw_data/                    # 原始数据（Excel文件）
-├── cleaned_data/                  # 清洗后数据
-│   ├── supply_filled.xlsx         # 发电量数据（最终产品）
-│   └── demand_cleaned.csv         # 需求数据（可选）
 ├── 1_clean_demand_supply/         # 数据清洗脚本
 │   ├── 1a_crawl_national_demand.py    # 抓取需求数据
 │   ├── 1b_clean_demand_data.py        # 清洗需求数据
-│   └── 1c_clean_supply_data.py        # 清洗发电量数据 ✓ 
+│   └── 1c_clean_supply_data.py        # 清洗发电量数据 
 ├── 2_process_validate/            # 数据处理验证脚本
 │   ├── 2a_merge_datasets.py
 │   ├── 2b_calculate_indicators.py
 │   └── 2c_validate_consistency.py
 ├── 3_output_anylogic/             # AnyLogic 输出文件
-│   ├── demand_monthly.csv
-│   ├── generation_monthly.csv
-│   ├── energy_balance.csv
-│   ├── scenario_parameters.csv
-│   └── model_inputs.xlsx
+│   ├── demand_crawl.csv
+│   ├── demand_filled.csv
+│   ├── supply_filled.csv
+│   └── scenario_parameters.csv
 ├── main_pipeline.py               # 完整 Pipeline 主程序
 └── README.md                      # 本文件
 ```
 
 ## 数据来源
 
-### 发电量数据（已实现 ✓）
+### 发电量数据
 - **水力发电**: 国家统计局水力发电量2010-月度数据.xls (198行 × 5列)
 - **核能发电**: 国家统计局核能发电量2010-月度数据.xls (198行 × 5列)
 - **风力发电**: 国家统计局风力发电量2010-月度数据.xls (198行 × 5列)
@@ -41,8 +37,8 @@ wholepackage/
 数据格式: 竖向格式（dates as rows）
 数据范围: 2010年01月 ~ 2026年02月（169个月）
 
-### 需求数据（可选）
-根据需要从国家能源局或其他来源抓取
+### 需求数据
+国家能源局爬虫获取
 
 ## Pipeline 工作流程
 
@@ -63,7 +59,7 @@ python 1_clean_demand_supply/1b_clean_demand_data.py
 - 处理缺失值和数据异常
 - 输出: `cleaned_data/demand_cleaned.csv`
 
-#### 1c. 清洗发电量数据 ⭐
+#### 1c. 清洗发电量数据 
 ```bash
 python 1_clean_demand_supply/1c_clean_supply_data.py
 ```
@@ -118,7 +114,7 @@ python 2_process_validate/2c_validate_consistency.py
 - 列: date, total_demand, ...
 - 格式: 1行标题 + N行数据
 
-#### 3b. 月度发电量文件 ⭐
+#### 3b. 月度发电量文件 
 ```
 3_output_anylogic/generation_monthly.csv
 ```
@@ -263,11 +259,10 @@ A: 推荐 CSV (UTF-8编码) 或 Excel 格式
 - ✓ 输出目录改为 cleaned_data/
 
 ### 2026-04-15
-- ✓ 1c_clean_supply_data.py 成功完成
 - ✓ 发电量数据合并和补值完成
 - ✓ 输出 supply_filled.xlsx (169 × 7)
 
-### 2026-04-10
+### 2026-03-10
 - ✓ 项目结构重构
 - ✓ 环境依赖完善
 
