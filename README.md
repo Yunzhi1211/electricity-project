@@ -152,7 +152,7 @@ python 2_process_validate/2c_validate_consistency.py
 python main_pipeline.py
 ```
 
-### 单独运行发电量清洗 (推荐先这样做)
+### 单独运行发电量清洗 
 ```bash
 python 1_clean_demand_supply/1c_clean_supply_data.py
 ```
