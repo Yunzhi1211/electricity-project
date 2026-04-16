@@ -42,7 +42,7 @@ wholepackage/
 
 ## Pipeline 工作流程
 
-### Stage 0: 数据获取和清洗
+### Stage 1: 数据获取和清洗
 
 #### 1a. 抓取需求数据
 ```bash
@@ -79,7 +79,7 @@ python 1_clean_demand_supply/1c_clean_supply_data.py
 - `wind_supply`: 风力发电 (MWh)
 - `solar_supply`: 太阳能发电 (MWh)
 
-### Stage 1: 数据处理和验证
+### Stage 2: 数据处理和验证
 
 #### 2a. 合并数据集
 ```bash
@@ -105,7 +105,7 @@ python 2_process_validate/2c_validate_consistency.py
 - 检查数据质量
 - 输出: `2_process_validate/validation_report.txt`
 
-### Stage 2: 生成AnyLogic输入文件
+### Stage 3: 生成AnyLogic输入文件
 
 #### 3a. 月度用电量文件
 ```
@@ -220,35 +220,6 @@ pip install pandas numpy openpyxl xlrd scikit-learn
 - 若 hydro + nuclear + wind + solar != total_supply
 - 则按比例调整分项值
 
-## 数据质量指标
-
-### 发电量数据 (supply_filled.xlsx)
-- 行数: 169 (2010-01 至 2026-02)
-- 列数: 7
-- 缺失值: 0 (已通过补值处理)
-- 负值: 0 (非负修正后)
-- 日期连续性: 100%
-
-## 常见问题
-
-### Q1: 为什么只有4个发电类型？
-A: 原始数据中只有 国家统计局提供的 水力、核能、风力、太阳能 这4个类型的完整竖向格式数据。
-火力发电和总发电量采用不同的横向格式，暂未纳入（可选扩展）。
-
-### Q2: thermal_supply 为什么是 NaN？
-A: 火力发电数据采用不同的 Excel 格式（8行 × 195列），需要单独处理。
-目前 total_supply 已经等于4个可用发电类型之和。
-
-### Q3: 如何添加其他数据源？
-A: 
-1. 在 `1_clean_demand_supply/` 中创建新的清洗脚本
-2. 输出至 `cleaned_data/` 目录
-3. 在 `main_pipeline.py` 中调用该脚本
-
-### Q4: AnyLogic 能接受什么格式？
-A: 推荐 CSV (UTF-8编码) 或 Excel 格式
-- CSV: 分号或逗号分隔
-- Excel: .xlsx 格式，每个数据集一个Sheet
 
 ## 更新日志
 
@@ -265,16 +236,3 @@ A: 推荐 CSV (UTF-8编码) 或 Excel 格式
 ### 2026-03-10
 - ✓ 项目结构重构
 - ✓ 环境依赖完善
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-MIT License
-
-## 联系方式
-
-作者: Yunzhi
-创建时间: 2026-04-16
