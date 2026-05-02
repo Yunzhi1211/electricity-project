@@ -44,15 +44,19 @@ Current report:
         Energy Data Consistency Report
 ============================================================
 
+============================================================
+        Energy Data Consistency Report
+============================================================
+
 Overall status: 4/6 checks passed, 2 warnings
 
 【GENERATION】
   max_deviation:
     2.7284841053187847e-12
   mean_deviation:
-    2.855625006676095e-13
+    2.853943248721633e-13
   mean_deviation_pct:
-    4.888743714974233e-15
+    4.74705456769815e-15
   abnormal_count:
     0
   status:
@@ -126,3 +130,11 @@ Overall status: 4/6 checks passed, 2 warnings
 
 ============================================================
 
+============================================================
+
+Lin, J., Kahrl, F., Liu, X., 2018. A regional analysis of excess capacity in China's power systems. Resources, Conservation and Recycling 129, 93–101. https://doi.org/10.1016/j.resconrec.2017.10.009.
+Ming, Z., Ping, Z., Shunkun, Y., Hui, L., 2017. Overall review of the overcapacity situation in China's power systems. Renewable and Sustainable Energy Reviews 76, 768–774. https://doi.org/10.1016/j.rser.2017.03.084.
+Lin, B., Liu, C., 2016. Why is electricity consumption inconsistent with economic growth in China? Energy Policy 88, 310–316. https://doi.org/10.1016/j.enpol.2015.10.031.
+Chen, H., Yan, H., Gong, K., Yuan, X.-C., 2021. Comprehensive assessment of the impact of temperature on electricity consumption in China. Journal of Cleaner Production 322, 129080. https://doi.org/10.1016/j.jclepro.2021.129080.
+Li, C., Shi, H., Cao, Y., Wang, J., Kuang, Y., Tan, Y., Wei, J., 2015. A review of wind curtailment and abandonment in China. Renewable and Sustainable Energy Reviews 41, 1067–1079. https://doi.org/10.1016/j.rser.2014.09.009.
+Liu, S., Bie, Z., Lin, J., Wang, X., 2018. Renewable energy integration and grid stability in China. Energy Policy 123, 494–502. https://doi.org/10.1016/j.enpol.2018.09.007.
