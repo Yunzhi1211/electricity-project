@@ -227,6 +227,12 @@ Consistency adjustment:
 
 ## Update Log
 
+### 2026-05-02
+- ✓ Restructured output folders: `3_output_check_report/` and `4_output_anylogic/`.
+- ✓ Updated academic citations with verified DOIs and author names.
+- ✓ Added bilingual documentation (`README.md` + `README_zh.md`).
+- ✓ Updated `.gitignore` to match actual project layout.
+
 ### 2026-04-16
 - ✓ Regenerated `main_pipeline.py` to fix encoding issues.
 - ✓ Updated `README.md` to reflect actual project structure.
