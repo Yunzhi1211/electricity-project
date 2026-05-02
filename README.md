@@ -229,7 +229,6 @@ Consistency adjustment:
 
 ### 2026-05-02
 - ✓ Restructured output folders: `3_output_check_report/` and `4_output_anylogic/`.
-- ✓ Updated academic citations with verified DOIs and author names.
 - ✓ Added bilingual documentation (`README.md` + `README_zh.md`).
 - ✓ Updated `.gitignore` to match actual project layout.
 

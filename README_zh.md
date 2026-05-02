@@ -230,7 +230,6 @@ pip install pandas numpy openpyxl xlrd scikit-learn
 
 ### 2026-05-02
 - ✓ 输出文件夹结构调整：`3_output_check_report/` 和 `4_output_anylogic/`
-- ✓ 核实并更新学术引用（DOI 与作者名）
 - ✓ 新增中英双语文档（`README.md` + `README_zh.md`）
 - ✓ 更新 `.gitignore` 以匹配实际项目结构
 
