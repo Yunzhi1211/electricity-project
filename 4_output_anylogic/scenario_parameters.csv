@@ -1,3 +1,0 @@
-﻿scenario_id,name,description,shock_type,demand_shock_pct,hydro_capacity_factor,carbon_tax_base,carbon_tax_volatility,shock_duration_months,abm_adaptation_speed
-policy_volatility_carbon_tax,Scenario 1 - Policy Volatility (Carbon Tax),Introduce staged carbon-tax volatility to observe ABM adaptation under policy uncertainty.,policy,0.0,1.0,80,0.3,12,0.6
-extreme_weather_demand_hydro,Scenario 2 - Extreme Weather (Demand Surge / Hydro Constraint),Simulate demand spikes and hydropower constraints to highlight ABM resilience during disruptions.,weather,0.18,0.7,80,0.1,6,0.85

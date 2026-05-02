@@ -54,9 +54,9 @@ Overall status: 4/6 checks passed, 2 warnings
   max_deviation:
     2.7284841053187847e-12
   mean_deviation:
-    2.853943248721633e-13
+    2.855625006676095e-13
   mean_deviation_pct:
-    4.74705456769815e-15
+    4.8867261721936545e-15
   abnormal_count:
     0
   status:
@@ -138,3 +138,42 @@ Lin, B., Liu, C., 2016. Why is electricity consumption inconsistent with economi
 Chen, H., Yan, H., Gong, K., Yuan, X.-C., 2021. Comprehensive assessment of the impact of temperature on electricity consumption in China. Journal of Cleaner Production 322, 129080. https://doi.org/10.1016/j.jclepro.2021.129080.
 Li, C., Shi, H., Cao, Y., Wang, J., Kuang, Y., Tan, Y., Wei, J., 2015. A review of wind curtailment and abandonment in China. Renewable and Sustainable Energy Reviews 41, 1067–1079. https://doi.org/10.1016/j.rser.2014.09.009.
 Liu, S., Bie, Z., Lin, J., Wang, X., 2018. Renewable energy integration and grid stability in China. Energy Policy 123, 494–502. https://doi.org/10.1016/j.enpol.2018.09.007.
+
+======================================================================
+FORECAST CONFIDENCE INTERVAL ASSESSMENT
+======================================================================
+Training data:   2010-01 to 2025-12 (up to 180 monthly observations)
+Forecast horizon: 120 months (10 years)
+Model:           SARIMA(1, 1, 1)x(1, 1, 1, 12) (monthly seasonality)
+
+─── Credibility by year (demand, 95% CI) ─────────────────────────────
+  NOTE: Confidence decreases with distance from training data.
+  Near-term forecasts (years 1-3) are significantly more reliable.
+  Year  1: CI half-width=15921  (97% of mean)  → VERY LOW — treat as scenario range
+  Year  2: CI half-width=15921  (92% of mean)  → VERY LOW — treat as scenario range
+  Year  3: CI half-width=15921  (88% of mean)  → VERY LOW — treat as scenario range
+  Year  4: CI half-width=15921  (84% of mean)  → VERY LOW — treat as scenario range
+  Year  5: CI half-width=15921  (80% of mean)  → VERY LOW — treat as scenario range
+  Year  6: CI half-width=15921  (76% of mean)  → VERY LOW — treat as scenario range
+  Year  7: CI half-width=15921  (73% of mean)  → VERY LOW — treat as scenario range
+  Year  8: CI half-width=15921  (70% of mean)  → VERY LOW — treat as scenario range
+  Year  9: CI half-width=15921  (67% of mean)  → VERY LOW — treat as scenario range
+  Year 10: CI half-width=15921  (65% of mean)  → VERY LOW — treat as scenario range
+
+─── 10-year (120-month) forecast overall ─────────────────────────────
+  Demand 95% CI half-width (all-period mean): 15921.1
+  Supply 95% CI half-width (all-period mean): 3396.1
+  Years 1-5: use for planning.  Years 6-10: use as scenario bounds only.
+
+─── 50-year (600-month) forecast ─────────────────────────────────────
+  Validity: NOT STATISTICALLY MEANINGFUL.
+  Reasons:
+  1. SARIMA CIs grow as O(√h) — after 600 steps the CI spans multiple
+     times the historical mean.
+  2. The model cannot capture structural breaks (e.g., energy transition,
+     carbon neutrality policy, major recessions).
+  3. China's electricity demand growth rate has itself changed several
+     times over 2010-2025; extrapolating 50 years is unreliable.
+  Recommendation: Use scenario-based analysis (e.g., IEA NZE, STEPS,
+  APS pathways) for horizons beyond 10 years.
+======================================================================

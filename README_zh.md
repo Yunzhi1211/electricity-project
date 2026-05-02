@@ -182,6 +182,10 @@ python 2_process_validate/2c_validate_consistency.py
 - 低速增长 (demand_growth=2%)
 - 可再生重点 (renewable_target=70%)
 
+> 说明：`2d_update_anylogic_database.py` 现在按供给与需求的“共同月份”写入
+> `GENERATION`/`DEMAND`，避免历史阶段出现 `month=null`。请将 AnyLogic 中 `Main.nMonths`
+> 设置为 `4_output_anylogic/db_update_info.txt` 里的 `COMMON aligned months`。
+
 ## 快速开始
 
 ### 运行完整 Pipeline
@@ -260,7 +264,13 @@ pip install pandas numpy openpyxl xlrd scikit-learn
 
 ## 更新日志
 
-### 2026-05-02
+### 2026-05-02（最新）
+- ✓ 预测周期延长至 10 年（120 个月），`2e_forecast.py` 每年标注置信度等级
+- ✓ 预测置信度评估合并至 `output_catalog.txt`，不再单独生成 `forecast_assessment.txt`
+- ✓ AnyLogic 仿真历史阶段结束后自动切换至预测阶段（共 313 个月）
+- ✓ 新增三张时序图：可再生占比、政府政策、能源平衡
+- ✓ 仿真界面新增运行状态显示（阶段 / 步骤 / 进度百分比）
+- ✓ 移除历史电价校准相关内容（2010–2025 年以政府指导价为主，缺乏市场出清价数据）
 - ✓ 输出文件夹结构调整：`3_output_check_report/` 和 `4_output_anylogic/`
 - ✓ 新增中英双语文档（`README.md` + `README_zh.md`）
 - ✓ 更新 `.gitignore` 以匹配实际项目结构

@@ -1,0 +1,12 @@
+SUPPLY raw rows:          169
+DEMAND raw rows:          193
+SUPPLY unique months:     169
+DEMAND unique months:     192
+COMMON aligned months:    169
+Dropped anomaly months:   7
+Dropped month list:       2010-01, 2011-01, 2012-01, 2013-02, 2016-06, 2018-06, 2022-10
+FINAL months written:     162
+Common month range:       2010-01 to 2025-12
+GENERATION rows written:  162
+DEMAND rows written:      162
+nMonths to set in AnyLogic Main.nMonths: 162

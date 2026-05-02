@@ -1,8 +1,197 @@
-# National Energy Data Processing Pipeline
+# China Electricity ABM — Data Pipeline & AnyLogic Model
 
 [English](README.md) | [简体中文](README_zh.md)
 
 ---
+
+## Project Overview
+
+End-to-end Agent-Based Model (ABM) for China's electricity market (2010–2025+).
+The Python pipeline cleans raw NBS/NEA data, produces AnyLogic database inputs, runs a
+5-year SARIMA forecast, and generates 3-D interactive visualizations.
+
+---
+
+## Folder Structure
+
+```
+wholepackage/
+├── 0_raw_data/                        # Raw Excel files from NBS
+├── 1_clean_demand_supply/             # Data cleaning scripts
+│   ├── 1a_crawl_national_demand.py    # Scrape NEA demand data
+│   ├── 1b_clean_demand_data.py        # Clean and fill demand gaps
+│   └── 1c_clean_supply_data.py        # Clean generation data (RF imputation)
+├── 2_process_validate/                # Processing, validation, modelling
+│   ├── 2a_merge_datasets.py           # Merge supply + demand
+│   ├── 2b_calculate_indicators.py     # YoY, shares, supply-demand ratio
+│   ├── 2c_validate_consistency.py     # Quality checks
+│   ├── 2d_update_anylogic_database.py # Rebuild db.script from Excel files
+│   ├── 2e_forecast.py                 # SARIMA 5-year demand/supply forecast
+│   └── 2f_3d_visualization.py         # Plotly 3-D interactive charts
+├── 3_output_check_report/             # Intermediate CSVs, reports, HTML charts
+├── 4_output_anylogic/                 # AnyLogic input files (Excel/CSV)
+│   ├── demand_filled.xlsx             # 2010-2025 monthly demand (193 rows)
+│   ├── supply_filled.xlsx             # 2010-2025 monthly generation (169 rows)
+│   ├── scenario_parameters.csv        # Two ABM scenarios
+│   ├── forecast_demand.csv            # 5-year demand forecast with 80/95% CI
+│   ├── forecast_supply.csv            # 5-year supply forecast with 80/95% CI
+│   └── db_update_info.txt             # Row counts; nMonths hint for AnyLogic
+├── 5_anylogic_model/                  # AnyLogic project
+│   └── ElectricityTrial_-_Version 7_-_Sources/
+│       ├── ElectricityTrial.alp       # Model file (XML)
+│       └── database/db.script         # HSQLDB plain-text database
+└── main_pipeline.py                   # One-command pipeline runner
+```
+
+---
+
+## Quick Start
+
+```bash
+python main_pipeline.py
+```
+
+Runs all 6 stages in sequence:
+1. Data acquisition & cleaning
+2. Processing & validation
+3. AnyLogic CSV/Excel outputs
+4. Rebuild AnyLogic HSQLDB (`db.script`)
+5. 5-year SARIMA forecast
+6. 3-D interactive charts (Plotly)
+
+---
+
+## AnyLogic Model (`5_anylogic_model/`)
+
+### Agent Classes
+
+| Class | Role |
+|---|---|
+| **Main** | Orchestrator: loads data, runs monthly timer, holds all arrays |
+| **GeneratorAgent** | Superclass for all five generator types |
+| **DemandAgent** | Sector demand node (Primary / Secondary / Tertiary / Residential) |
+| **GridAgent** | Clears the market: price = basePrice × tightness × priceSensitivity |
+| **GovernmentAgent** | Carries scenario parameters (demandGrowthAdj, priceSensitivity, …) |
+
+**Generator sub-instances in Main** (all are `GeneratorAgent`):
+`thermalGen`, `hydroGen`, `nuclearGen`, `windGen`, `solarGen`
+
+**Demand sub-instances**: `primaryDem`, `secondaryDem`, `tertiaryDem`, `residentialDem`
+
+### Database Tables
+
+| Table | Rows | Purpose |
+|---|---|---|
+| GENERATION | 169 | Monthly generation by source (TWh), 2010-01 → 2025-12 |
+| DEMAND | 193 | Monthly demand by sector (TWh), 2010-01 → 2025-12 |
+| TECH | 10 | Generator parameters (priority, variable cost, carbon factor, bid markup, min/max share) |
+| SCENARIO | 4 | Scenario multipliers for growth and pricing |
+
+### Simulation Flow (monthly timer, 1-month recurrence)
+
+```
+Startup → loadGenerationData() + loadDemandData() + loadTechConfig()
+       → loadScenarioConfig() + loadShockConfig()
+       → applyHistoricalMonth() (index 0)
+
+Each month (timer fires):
+  ├── if useHistoricalData:
+  │     currentIndex++
+  │     applyHistoricalMonth()          ← sets demand & generation from arrays
+  │     sampleShock()                   ← stochastic shock (see below)
+  │     grid.clearMarket()              ← price = basePrice × tightness × priceSensitivity
+  │     [if currentIndex >= nMonths-1]  → finishSimulation()  ← auto-stops
+  └── else (ABM growth mode):
+        demand *= (1 + growthRate × demandGrowthAdj)
+        grid.clearMarket()
+        generators.updateProfit()
+```
+
+### What Is Stochastic vs. Deterministic
+
+| Element | Stochastic? | Detail |
+|---|---|---|
+| Historical demand/supply loading | **No** | Direct table lookup from db.script |
+| Monthly timer, data index stepping | **No** | Deterministic |
+| **Shock occurrence** | **Yes** | Bernoulli draw each month: `uniform(1.0) < shockProbList[k]` |
+| **Shock intensity** | **Yes** | Truncated normal: `normal(mean, std)`, clipped to [1%, 50%] |
+| **Hydro factor during shock** | **Yes** | `shockHydroFactor` is shock-scenario dependent |
+| **Shock recovery** | **Yes** | Gradual decay: intensity × 0.80 per month until < threshold |
+| Market price | Partly | Deterministic formula, but inputs are shock-modified demand |
+| Bid prices | **No** | Formula-based (variableCost + carbonTax × carbonFactor + markup) |
+| Generator profit | **No** | Deterministic calculation |
+| Scenario parameters | **No** | Loaded from SCENARIO table at startup |
+
+**Shock config (4 shock scenarios × 3 params each)**:
+- Scenario 0 (baseline): P=5%/month, intensity mean=15%, std=5%
+- Scenario 1 (policy): P=3%/month, mean=8%, std=3%
+- Scenario 2 (carbon): P=4%/month, mean=12%, std=4%
+- Scenario 3 (extreme weather): P=6%/month, mean=18%, std=6%
+
+### Two ABM Scenarios (Professor Feedback)
+
+| Scenario | ID | Shock type | Key parameters |
+|---|---|---|---|
+| **Policy Volatility (Carbon Tax)** | `policy_volatility_carbon_tax` | policy | carbon_tax_base=80, volatility=30%, shock_duration=12 mo |
+| **Extreme Weather** | `extreme_weather_demand_hydro` | weather | demand_shock=+18%, hydro_factor=0.70, duration=6 mo |
+
+---
+
+## Forecast (5-Year)
+
+Script: `2_process_validate/2e_forecast.py`
+
+- Model: SARIMA(1,1,1)(1,1,1)₁₂ fitted on 2010-2025 (up to 180 monthly obs)
+- Output: `4_output_anylogic/forecast_demand.csv` and `forecast_supply.csv`
+  - Columns: `date`, `forecast`, `ci80_lower`, `ci80_upper`, `ci95_lower`, `ci95_upper`
+
+**Confidence interval validity**:
+
+| Horizon | Assessment |
+|---|---|
+| 5 years (60 mo) | **Reasonable** — seasonal + trend well-captured; CI widths typically <30% of mean |
+| 10 years (120 mo) | Caution — treat as scenario range, not probabilistic |
+| 50 years (600 mo) | **Not valid** — CI spans multiples of the mean; structural breaks cannot be modelled |
+
+---
+
+## 3-D Visualizations
+
+Script: `2_process_validate/2f_3d_visualization.py`
+Requires: `pip install plotly openpyxl`
+
+Outputs in `3_output_check_report/`:
+
+| File | Content |
+|---|---|
+| `3d_generation_mix.html` | 3-D ribbon: month × generation source × volume |
+| `3d_supply_demand.html` | 3-D scatter: supply vs demand, colored by gap |
+| `3d_demand_sectors.html` | 3-D surface: time × sector × demand |
+| `3d_forecast_fan.html` | Historical + 5-year forecast with CI bounds |
+
+Open any `.html` file in a browser for fully interactive rotation, zoom, and hover tooltips.
+
+---
+
+## Pipeline Output Summary
+
+After running `main_pipeline.py`, the following files are ready:
+
+| Location | File | Use |
+|---|---|---|
+| `4_output_anylogic/` | `supply_filled.xlsx` | AnyLogic GENERATION data |
+| `4_output_anylogic/` | `demand_filled.xlsx` | AnyLogic DEMAND data |
+| `4_output_anylogic/` | `scenario_parameters.csv` | Scenario config |
+| `4_output_anylogic/` | `forecast_demand.csv` / `forecast_supply.csv` | 10-yr forecast |
+| `5_anylogic_model/.../database/` | `db.script` | **Auto-rebuilt** — open model directly in AnyLogic |
+| `3_output_check_report/` | `output_catalog.txt` | Validation + forecast assessment report |
+| `3_output_check_report/` | `3d_*.html` | 3-D interactive charts |
+
+> **Note**: `2d_update_anylogic_database.py` now writes GENERATION/DEMAND by **common months only**
+> (intersection of supply and demand dates). Set `Main.nMonths` to the value in
+> `4_output_anylogic/db_update_info.txt` (`COMMON aligned months`) so the historical phase never
+> reads uninitialized array slots.
+
 
 
 ## Project Overview

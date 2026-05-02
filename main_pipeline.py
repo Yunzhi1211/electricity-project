@@ -81,9 +81,22 @@ class EnergyDataPipeline:
             logger.info("Stage 2: generate AnyLogic input files")
             self._stage_2_anylogic_outputs()
 
+            # Stage 3: update AnyLogic database.
+            logger.info("Stage 3: update AnyLogic HSQLDB with new data")
+            self._run_processing_script(PROCESS_VALIDATE_DIR / "2d_update_anylogic_database.py")
+
+            # Stage 4: forecast.
+            logger.info("Stage 4: SARIMA forecast (10-year, appended to output_catalog.txt)")
+            self._run_processing_script(PROCESS_VALIDATE_DIR / "2e_forecast.py")
+
+            # Stage 5: 3-D visualization.
+            logger.info("Stage 5: 3-D visualization")
+            self._run_processing_script(PROCESS_VALIDATE_DIR / "2f_3d_visualization.py")
+
             logger.info("="*60)
             logger.info("Pipeline execution completed")
-            logger.info(f"Output files saved to: {OUTPUT_ANYLOGIC_DIR}")
+            logger.info(f"AnyLogic input files:  {OUTPUT_ANYLOGIC_DIR}")
+            logger.info(f"Check reports:         {CHECK_REPORT_DIR}")
             logger.info("="*60)
 
         except Exception as e:
@@ -162,20 +175,16 @@ class EnergyDataPipeline:
             logger.info("3c: generating energy balance file...")
             self._create_energy_balance_csv(energy_df)
 
-            # 3d: scenario parameters.
-            logger.info("3d: generating scenario parameter file...")
-            self._create_scenario_parameters_csv()
-
-            # 3e: consolidated model inputs.
-            logger.info("3e: generating consolidated model input file...")
+            # 3d: consolidated model inputs.
+            logger.info("3d: generating consolidated model input file...")
             self._create_model_inputs_excel(energy_df)
 
-            # 3f: output documentation.
-            logger.info("3f: generating output documentation...")
+            # 3e: output documentation.
+            logger.info("3e: generating output documentation...")
             self._create_output_documentation(energy_df)
 
-            # 3g: remove standalone validation report after consolidating it into output_catalog.
-            logger.info("3g: removing standalone validation report...")
+            # 3f: remove standalone validation report after consolidating it into output_catalog.
+            logger.info("3f: removing standalone validation report...")
             self._remove_validation_report_file()
 
         except Exception as e:
@@ -184,7 +193,7 @@ class EnergyDataPipeline:
 
     def _cleanup_anylogic_output_dir(self) -> None:
         """Keep only AnyLogic-facing files in 4_output_anylogic."""
-        allowed = {"demand_crawl.csv", "demand_filled.xlsx", "supply_filled.xlsx", "scenario_parameters.csv"}
+        allowed = {"demand_crawl.csv", "demand_filled.xlsx", "supply_filled.xlsx"}
         for file_path in OUTPUT_ANYLOGIC_DIR.glob("*"):
             if file_path.is_file() and file_path.name not in allowed:
                 file_path.unlink(missing_ok=True)
@@ -417,44 +426,6 @@ class EnergyDataPipeline:
         except Exception as e:
             logger.error(f"Failed to generate energy balance file: {str(e)}")
 
-    def _create_scenario_parameters_csv(self) -> None:
-        """Create scenario parameter CSV."""
-        try:
-            scenarios = [
-                {
-                    'scenario_id': 'policy_volatility_carbon_tax',
-                    'name': 'Scenario 1 - Policy Volatility (Carbon Tax)',
-                    'description': 'Introduce staged carbon-tax volatility to observe ABM adaptation under policy uncertainty.',
-                    'shock_type': 'policy',
-                    'demand_shock_pct': 0.00,
-                    'hydro_capacity_factor': 1.00,
-                    'carbon_tax_base': 80,
-                    'carbon_tax_volatility': 0.30,
-                    'shock_duration_months': 12,
-                    'abm_adaptation_speed': 0.60
-                },
-                {
-                    'scenario_id': 'extreme_weather_demand_hydro',
-                    'name': 'Scenario 2 - Extreme Weather (Demand Surge / Hydro Constraint)',
-                    'description': 'Simulate demand spikes and hydropower constraints to highlight ABM resilience during disruptions.',
-                    'shock_type': 'weather',
-                    'demand_shock_pct': 0.18,
-                    'hydro_capacity_factor': 0.70,
-                    'carbon_tax_base': 80,
-                    'carbon_tax_volatility': 0.10,
-                    'shock_duration_months': 6,
-                    'abm_adaptation_speed': 0.85
-                }
-            ]
-
-            scenarios_df = pd.DataFrame(scenarios)
-            output_file = OUTPUT_ANYLOGIC_DIR / "scenario_parameters.csv"
-            scenarios_df.to_csv(output_file, index=False, encoding='utf-8-sig')
-            logger.info(f"Scenario parameter file generated: {output_file}")
-
-        except Exception as e:
-            logger.error(f"Failed to generate scenario parameters: {str(e)}")
-
     def _create_model_inputs_excel(self, df: pd.DataFrame) -> None:
         """Create consolidated model input workbook with indicator columns only."""
         try:
@@ -542,7 +513,7 @@ class EnergyDataPipeline:
                 "- Because GROWTH shows persistent extreme columns, demand and supply agents should include shock regimes with heterogeneous adaptation speeds.\n"
                 "- Because BALANCE still has severe imbalance months, dispatch logic should explicitly model priority rules, outage states, and demand-response behavior.\n"
                 "- Because volatility peaks in demand and generation MoM indicators, scenario experiments should prioritize demand shock intensity and source-specific output fluctuation (including thermal and renewables).\n"
-                "- Implement shocks via scenario_parameters.csv (demand_shock_pct, hydro_capacity_factor, carbon_tax_volatility, shock_duration_months) and evaluate unmet demand, supply-demand ratio, renewable share, and adaptation speed over time.\n"
+                "- Implement shocks via model policy controls (e.g., carbon tax and renewable incentive sliders) and evaluate unmet demand, supply-demand ratio, renewable share, and adaptation speed over time.\n"
                 "Current report:\n"
                 "============================================================\n"
                 "        Energy Data Consistency Report\n"
