@@ -1,23 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-1c_clean_supply_data.py - 供电量数据清洗和补值
+1c_clean_supply_data.py - Supply Data Cleaning and Imputation
 
-数据来源：
-- 使用国家统计局发电量数据
-- 主要包括
-  - 总供电量 (total_supply) 
-  - 分项供电量 (thermal_supply, hydro_supply, nuclear_supply, wind_supply, solar_supply)
-- 但由于存在缺失值和不一致问题，需要进行系统的清洗和补值处理。
+This script cleans monthly generation data and imputes missing values for
+total and component supply series.
 
-缺失值填补方法选择随机森林原因：
-- 随机森林能够同时利用年份、月份、滞后项和滚动均值等特征，更好地刻画月度供电量的趋势性和季节性
-- 相比线性回归，随机森林无需假设变量之间为线性关系
-- 相比 ARIMA 时间序列模型，随机森林更易在多变量、非线性和缺失模式较复杂的场景下实施
-
-缺失值填补思路分两步：
-第一，利用总供电量与各类型供电量之间的加总关系，对可直接反推的缺失值进行填补
-第二，对仍然缺失的月份，构造年份、月份、滞后值和滚动均值等时间序列特征，使用随机森林模型预测缺失值
-最后再做一致性调整，使总量与分项之和尽量匹配
+Method overview:
+1. Load source generation files and align by date.
+2. Apply accounting-rule completion where possible.
+3. Build temporal lag/rolling features.
+4. Use Random Forest to impute remaining missing values.
+5. Apply consistency and non-negative corrections.
 """
 
 import pandas as pd
@@ -25,222 +18,274 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from pathlib import Path
 import logging
+import re
 
-# 基础配置
+# Base configuration
 BASE_DIR = Path(__file__).parent.parent
 INPUT_DIR = BASE_DIR / "0_raw_data"
-OUTPUT_DIR = BASE_DIR / "cleaned_data"
+OUTPUT_DIR = BASE_DIR / "4_output_anylogic"
+LOG_DIR = BASE_DIR / "0_log"
+LOG_DIR.mkdir(exist_ok=True)
 
-# 日志配置
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('1c_clean_supply.log', encoding='utf-8-sig')
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-# 供电数据列定义
+# Supply column definitions
 TARGETS = ['total_supply', 'thermal_supply', 'hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
 PART_COLS = ['thermal_supply', 'hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
 
 
 def load_and_prepare(file_path):
-    """读取和基本清理数据 - 只处理纵向格式的分项供电数据"""
-    logger.info(f"读取数据: {file_path}")
+    """Load and pre-clean supply data from mixed (vertical/horizontal) files."""
+    logger.info(f"Reading data: {file_path}")
     
     file_path = Path(file_path)
     
     if not file_path.is_dir():
-        logger.error("需要文件夹路径")
+        logger.error("Input must be a directory path")
         return None
     
-    # 先读取4个纵向格式的分项数据
-    logger.info("读取纵向格式供电数据...")
-    
+    logger.info("Reading supply datasets (auto-detect vertical/horizontal formats)...")
+
     dfs = []
-    
-    # 水力发电量
-    hydro_file = file_path / "国家统计局水力发电量2010-月度数据.xls"
-    if hydro_file.exists():
-        df = _read_vertical_file(hydro_file, "hydro_supply")
-        if df is not None:
+    file_specs = [
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "total_supply", "Total generation"),
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u706b\u529b\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "thermal_supply", "Thermal power"),
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u6c34\u529b\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "hydro_supply", "Hydropower"),
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u6838\u80fd\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "nuclear_supply", "Nuclear power"),
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u98ce\u529b\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "wind_supply", "Wind power"),
+        ("\u56fd\u5bb6\u7edf\u8ba1\u5c40\u592a\u9633\u80fd\u53d1\u7535\u91cf2010-\u6708\u5ea6\u6570\u636e.xls", "solar_supply", "Solar power"),
+    ]
+
+    for filename, col_name, label in file_specs:
+        src = file_path / filename
+        if not src.exists():
+            continue
+        df = _read_supply_file(src, col_name)
+        if df is not None and not df.empty:
             dfs.append(df)
-            logger.info(f"  水力发电: {df.shape}")
-    
-    # 核能发电量
-    nuclear_file = file_path / "国家统计局核能发电量2010-月度数据.xls"
-    if nuclear_file.exists():
-        df = _read_vertical_file(nuclear_file, "nuclear_supply")
-        if df is not None:
-            dfs.append(df)
-            logger.info(f"  核能发电: {df.shape}")
-    
-    # 风力发电量
-    wind_file = file_path / "国家统计局风力发电量2010-月度数据.xls"
-    if wind_file.exists():
-        df = _read_vertical_file(wind_file, "wind_supply")
-        if df is not None:
-            dfs.append(df)
-            logger.info(f"  风力发电: {df.shape}")
-    
-    # 太阳能发电量
-    solar_file = file_path / "国家统计局太阳能发电量2010-月度数据.xls"
-    if solar_file.exists():
-        df = _read_vertical_file(solar_file, "solar_supply")
-        if df is not None:
-            dfs.append(df)
-            logger.info(f"  太阳能发电: {df.shape}")
+            logger.info(f"  {label}: {df.shape}")
     
     if not dfs:
-        logger.error("无法读取任何供电数据文件")
+        logger.error("No readable supply datasets were found")
         return None
     
-    # 按日期合并所有分项数据
-    logger.info(f"合并 {len(dfs)} 个数据集...")
+    # Merge component datasets by date.
+    logger.info(f"Merging {len(dfs)} datasets...")
     df = dfs[0]
     for other_df in dfs[1:]:
         df = df.merge(other_df, on='date', how='outer')
     
-    logger.info(f"合并完成，形状: {df.shape}")
+    logger.info(f"Merge complete, shape: {df.shape}")
     
-    # 添加总供电量（分项之和）
-    supply_cols = ['hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
-    df['total_supply'] = df[supply_cols].sum(axis=1)
+    for col in TARGETS:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    # If total_supply is unavailable for a month, use component sum as fallback.
+    part_sum = df[PART_COLS].sum(axis=1, min_count=1)
+    df['total_supply'] = df['total_supply'].where(df['total_supply'].notna(), part_sum)
     
-    # 添加火力发电量（缺失，先用 NaN）
-    df['thermal_supply'] = np.nan
-    
-    # 最终列顺序
+    # Output column order.
     df = df[['date', 'total_supply', 'thermal_supply', 'hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']].copy()
     
-    # 数据清理
+    # Basic data cleanup.
     if df is None or df.empty:
-        logger.error("数据加载结果为空")
+        logger.error("Loaded dataset is empty")
         return None
     
-    # 日期转换
+    # Parse dates.
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
-    # 删除日期为空的异常行
+    # Drop invalid date rows.
     df = df[df['date'].notna()].copy()
 
-    # 数值转换（除了日期列）
+    # Convert non-date columns to numeric.
     for col in df.columns:
         if col != 'date':
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # 按日期升序并去重
+    # Sort and deduplicate by date.
     df = df.sort_values('date').reset_index(drop=True)
     df = df.drop_duplicates(subset=['date'], keep='first')
 
-    logger.info(f"数据加载完成，形状: {df.shape}")
+    logger.info(f"Data load complete, shape: {df.shape}")
     return df
 
 
+def _read_supply_file(filepath, col_hint):
+    """Read one supply file with format auto-detection."""
+    try:
+        raw = pd.read_excel(filepath, header=None)
+        # Horizontal format usually has one row with many month labels (e.g. 2026年2月).
+        month_pattern = re.compile(r"^\d{4}\u5e74\d{1,2}\u6708$")
+        max_month_hits = 0
+        for row_idx in range(min(10, len(raw))):
+            row_vals = raw.iloc[row_idx].astype(str).str.strip()
+            month_hits = row_vals.apply(lambda x: bool(month_pattern.match(str(x).strip()))).sum()
+            max_month_hits = max(max_month_hits, int(month_hits))
+
+        if max_month_hits >= 3:
+            return _read_horizontal_file(raw, filepath, col_hint)
+        return _read_vertical_file(filepath, col_hint)
+    except Exception as e:
+        logger.warning(f"Failed to read file {filepath}: {e}")
+        return None
+
+
+def _read_horizontal_file(df_raw, filepath, col_hint):
+    """Read horizontal-format file (rows=indicators, columns=months)."""
+    try:
+        df_raw = df_raw.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
+        if df_raw.empty:
+            return None
+
+        month_pattern = re.compile(r"^\d{4}\u5e74\d{1,2}\u6708$")
+        month_row = None
+        month_cols = []
+        for row_idx in range(min(12, len(df_raw))):
+            row_vals = df_raw.iloc[row_idx].astype(str).str.strip()
+            cols = [i for i, v in enumerate(row_vals) if month_pattern.match(str(v).strip())]
+            if len(cols) >= 3:
+                month_row = row_idx
+                month_cols = cols
+                break
+
+        if month_row is None:
+            logger.warning(f"No month-header row found in horizontal file: {filepath}")
+            return None
+
+        label_col = 0
+        label_series = df_raw.iloc[:, label_col].astype(str).str.strip()
+        row_mask = label_series.str.contains("\u5f53\u671f\u503c", na=False)
+        if not row_mask.any():
+            logger.warning(f"No '\u5f53\u671f\u503c' row found in file: {filepath}")
+            return None
+
+        value_row = df_raw.loc[row_mask].iloc[0]
+        records = []
+        for col_idx in month_cols:
+            date_text = str(df_raw.iat[month_row, col_idx]).strip()
+            value = pd.to_numeric(value_row.iloc[col_idx], errors='coerce')
+            records.append({"date": _convert_cn_date(date_text), col_hint: value})
+
+        out = pd.DataFrame(records).dropna(subset=['date'])
+        out[col_hint] = pd.to_numeric(out[col_hint], errors='coerce')
+        out = out.dropna(subset=[col_hint])
+        return out
+    except Exception as e:
+        logger.warning(f"Failed to process horizontal format ({filepath.name}): {e}")
+        return None
+
+
 def _read_vertical_file(filepath, col_hint):
-    """读取纵向格式Excel文件（行=时间, 列=指标）
+    """Read one vertical-format Excel file (rows=time, columns=fields).
     
     Args:
-        filepath: Excel 文件路径
-        col_hint: 列名关键词，用于在列中查找对应的数值列
+        filepath: Excel file path.
+        col_hint: Output column name for extracted values.
     
     Returns:
-        包含 'date' 和指标值列的 DataFrame
+        A DataFrame containing date and one numeric value column.
     """
     try:
         df = pd.read_excel(filepath)
         
-        # 根据中国统计部门的标准格式，第2行（index=1）是列标题
+        # In this source format, row 2 contains headers.
         if df.shape[0] < 2:
-            logger.warning(f"文件行数过少: {filepath}")
+            logger.warning(f"Too few rows in file: {filepath}")
             return None
         
-        # 获取列标题
+        # Extract header row.
         header = df.iloc[1, :].tolist()
         
-        # 从第3行开始是数据
+        # Data starts from row 3.
         df_data = df.iloc[2:, :].copy()
         df_data.columns = header
         
-        # 第1列是日期
+        # First column is date.
         date_col = df_data.columns[0]
         
-        # 查找包含数值的列（通常是第2列，但如果有多列则取第2列）
+        # Use the second column as value column.
         value_col = df_data.columns[1] if len(df_data.columns) > 1 else None
         
         if value_col is None:
-            logger.warning(f"无法找到数值列: {filepath}")
+            logger.warning(f"Value column not found: {filepath}")
             return None
         
-        # 提取日期和数值列
+        # Keep date and value columns.
         result = df_data[[date_col, value_col]].copy()
         result.columns = ['date', col_hint]
         
-        # 转换日期（中文格式如"2026年2月"）
+        # Convert Chinese date format such as "2026年2月".
         result['date'] = result['date'].apply(_convert_cn_date)
         
-        # 转换数值
+        # Convert numeric values.
         result[col_hint] = pd.to_numeric(result[col_hint], errors='coerce')
         
-        # 删除无效行
+        # Drop invalid rows.
         result = result.dropna(subset=['date', col_hint])
         
         return result
         
     except Exception as e:
-        logger.warning(f"读取文件失败 {filepath}: {e}")
+        logger.warning(f"Failed to read file {filepath}: {e}")
         return None
 
 
 def _process_vertical_format(df, filename):
-    """处理纵向格式（行=月份, 列=指标）"""
+    """Process vertical-format data (rows=months, columns=fields)."""
     try:
-        # 国家统计局的数据格式约定：第2行（index=1）是列标题
+        # Row 2 is the header row in this file format.
         header_row = 1
         
-        # 用该行作为列名
+        # Apply headers.
         new_header = df.iloc[header_row, :].tolist()
         df_clean = df.iloc[header_row+1:, :].reset_index(drop=True)
         df_clean.columns = new_header
         
-        # 提取日期列（第1列）
+        # First column is date.
         date_col = df_clean.columns[0]
         df_clean = df_clean.rename(columns={date_col: 'date'})
         
-        # 转换日期
-        df_clean['date'] = _convert_cn_date(df_clean['date'])  # 这里会自动调用Series版本
+        # Convert dates.
+        df_clean['date'] = _convert_cn_date(df_clean['date'])
         
-        # 找数值列（第2列通常就是）
+        # Value column is usually the second column.
         if len(df_clean.columns) > 1:
             numeric_col = df_clean.columns[1]
             df_result = df_clean[['date', numeric_col]].copy()
         else:
             return None
         
-        # 重命名列名：根据文件名推断分项
-        if '太阳' in filename:
+        # Infer component name from file name.
+        if '\u592a\u9633' in filename:
             df_result = df_result.rename(columns={numeric_col: 'solar_supply'})
-        elif '水' in filename:
+        elif '\u6c34' in filename:
             df_result = df_result.rename(columns={numeric_col: 'hydro_supply'})
-        elif '核' in filename:
+        elif '\u6838' in filename:
             df_result = df_result.rename(columns={numeric_col: 'nuclear_supply'})
-        elif '风' in filename:
+        elif '\u98ce' in filename:
             df_result = df_result.rename(columns={numeric_col: 'wind_supply'})
         
         return df_result
         
     except Exception as e:
-        logger.warning(f"纵向格式处理失败 ({filename}): {e}")
+        logger.warning(f"Failed to process vertical format ({filename}): {e}")
         import traceback
         logger.debug(traceback.format_exc())
         return None
 
 
 def _convert_cn_date(date_series):
-    """转换中文日期格式（如'2026年2月'）到datetime"""
+    """Convert Chinese date format (e.g., 2026年2月) to datetime."""
     def convert_single(date_str):
         if pd.isna(date_str):
             return pd.NaT
@@ -248,20 +293,20 @@ def _convert_cn_date(date_series):
         date_str = str(date_str).strip()
         
         try:
-            # 处理 "2026年2月" 格式
-            if '年' in date_str and '月' in date_str:
-                date_str = date_str.replace('年', '-').replace('月', '')
-                # 添加15日作为月中日期
+            # Handle format like "2026年2月".
+            if '\u5e74' in date_str and '\u6708' in date_str:
+                date_str = date_str.replace('\u5e74', '-').replace('\u6708', '')
+                # Use day 15 as a mid-month placeholder.
                 if len(date_str.split('-')) == 2:
                     date_str += '-15'
                 return pd.to_datetime(date_str)
             
-            # 尝试标准格式
+            # Fall back to generic parser.
             return pd.to_datetime(date_str)
         except:
             return pd.NaT
     
-    # 处理 Series 和标量
+    # Handle both Series and scalar input.
     if isinstance(date_series, pd.Series):
         return date_series.apply(convert_single)
     else:
@@ -271,12 +316,12 @@ def _convert_cn_date(date_series):
 
 
 def add_temporal_features(df):
-    """添加时间特征"""
+    """Add temporal features."""
     df['year'] = df['date'].dt.year
     df['month'] = df['date'].dt.month
     df['quarter'] = df['date'].dt.quarter
 
-    # 月份周期特征
+    # Cyclical month encoding.
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
 
@@ -284,8 +329,8 @@ def add_temporal_features(df):
 
 
 def fill_by_accounting(df):
-    """会计恒等式补值：total_supply = sum(parts)"""
-    logger.info("执行会计恒等式补值...")
+    """Apply accounting-rule completion: total_supply = sum(parts)."""
+    logger.info("Applying accounting-rule completion...")
     changed = True
     iterations = 0
 
@@ -293,13 +338,13 @@ def fill_by_accounting(df):
         changed = False
         iterations += 1
 
-        # 如果总量缺失，但所有分项都已知 -> 总量 = 分项和
+        # Infer total when all components are present.
         mask_total = df['total_supply'].isna() & df[PART_COLS].notna().all(axis=1)
         if mask_total.any():
             df.loc[mask_total, 'total_supply'] = df.loc[mask_total, PART_COLS].sum(axis=1)
             changed = True
 
-        # 如果某个分项缺失，但总量和其余分项都已知 -> 反推该分项
+        # Infer one missing component from total and other components.
         for col in PART_COLS:
             other_parts = [c for c in PART_COLS if c != col]
             mask_part = (
@@ -314,39 +359,39 @@ def fill_by_accounting(df):
                 )
                 changed = True
 
-    logger.info(f"会计恒等式补值完成（迭代{iterations}次）")
+    logger.info(f"Accounting-rule completion finished after {iterations} iterations")
     return df
 
 
 def create_temp_filled(df, col):
-    """临时补值函数，用于构造滞后/滚动特征时避免特征本身为缺失"""
+    """Create temporary filled series for feature engineering."""
     temp = df[col].copy()
 
-    # 线性插值
+    # Linear interpolation.
     temp = temp.interpolate(method='linear')
 
-    # 同月份历史均值填补
+    # Fill by month-wise historical mean.
     month_mean = df.groupby('month')[col].transform('mean')
     temp = temp.fillna(month_mean)
 
-    # 仍缺失则用中位数
+    # Fill remaining NaNs with median.
     temp = temp.fillna(df[col].median())
 
     return temp
 
 
 def add_series_features(df, col):
-    """构造时间序列特征"""
+    """Add lag and rolling features for a target column."""
     temp_col = f'{col}_temp'
     df[temp_col] = create_temp_filled(df, col)
 
-    # 滞后项
+    # Lag terms.
     df[f'{col}_lag_1'] = df[temp_col].shift(1)
     df[f'{col}_lag_2'] = df[temp_col].shift(2)
     df[f'{col}_lag_3'] = df[temp_col].shift(3)
     df[f'{col}_lag_12'] = df[temp_col].shift(12)
 
-    # 滚动均值（注意都先shift(1)，防止用到当期信息）
+    # Shifted rolling means to avoid leakage.
     df[f'{col}_roll_mean_3'] = df[temp_col].shift(1).rolling(3).mean()
     df[f'{col}_roll_mean_6'] = df[temp_col].shift(1).rolling(6).mean()
     df[f'{col}_roll_mean_12'] = df[temp_col].shift(1).rolling(12).mean()
@@ -355,7 +400,7 @@ def add_series_features(df, col):
 
 
 def ml_fill_column(df, target_col):
-    """随机森林逐列补值"""
+    """Impute one target column using Random Forest."""
     feature_cols = [
         'year', 'month', 'quarter', 'month_sin', 'month_cos',
         f'{target_col}_lag_1',
@@ -370,11 +415,11 @@ def ml_fill_column(df, target_col):
     train_df = df[df[target_col].notna()].copy()
     pred_df = df[df[target_col].isna()].copy()
 
-    # 没有缺失就直接返回
+    # Return if no missing values.
     if pred_df.empty:
         return df
 
-    # 如果训练样本过少，则直接用月份均值/中位数填补
+    # Fallback for very small training sets.
     if len(train_df) < 12:
         month_mean_map = train_df.groupby('month')[target_col].mean()
         fill_vals = pred_df['month'].map(month_mean_map)
@@ -382,7 +427,7 @@ def ml_fill_column(df, target_col):
         df.loc[df[target_col].isna(), target_col] = fill_vals.values
         return df
 
-    # 特征缺失用训练集特征中位数填补
+    # Fill feature NaNs with training medians.
     for col in feature_cols:
         med = train_df[col].median()
         train_df[col] = train_df[col].fillna(med)
@@ -409,11 +454,11 @@ def ml_fill_column(df, target_col):
 
 
 def consistency_adjustment(df):
-    """一致性调整：让分项之和尽量等于总量"""
-    logger.info("执行一致性调整...")
+    """Scale parts so that their sum aligns with total supply."""
+    logger.info("Applying consistency adjustment...")
     sum_parts = df[PART_COLS].sum(axis=1)
 
-    # 避免除零
+    # Avoid division-by-zero.
     ratio = np.where(sum_parts > 0, df['total_supply'] / sum_parts, 1)
 
     for col in PART_COLS:
@@ -423,8 +468,8 @@ def consistency_adjustment(df):
 
 
 def non_negative_correction(df):
-    """非负修正"""
-    logger.info("执行非负修正...")
+    """Clip negative values to zero."""
+    logger.info("Applying non-negative correction...")
     for col in TARGETS:
         df[col] = df[col].clip(lower=0)
 
@@ -432,36 +477,40 @@ def non_negative_correction(df):
 
 
 def clean_supply_data(input_file, output_file):
-    """主流程：读取 -> 清洗 -> 填补 -> 保存"""
-    logger.info(f"开始处理供电量数据: {input_file}")
+    """Main flow: load -> clean -> impute -> save."""
+    logger.info(f"Starting supply data processing: {input_file}")
     
     df = load_and_prepare(input_file)
     
-    logger.info("添加时间特征...")
+    if df is None:
+        logger.error("Data loading failed, aborting supply cleaning.")
+        return None
+    
+    logger.info("Adding temporal features...")
     df = add_temporal_features(df)
     
-    logger.info("会计恒等式补值...")
+    logger.info("Running accounting-rule completion...")
     df = fill_by_accounting(df)
     
-    logger.info("构造时间序列特征...")
+    logger.info("Building time-series features...")
     for col in TARGETS:
         df = add_series_features(df, col)
     
-    logger.info("随机森林补值...")
+    logger.info("Running random-forest imputation...")
     for col in TARGETS:
-        logger.info(f"  补值 {col}...")
+        logger.info(f"  Imputing {col}...")
         df = ml_fill_column(df, col)
     
-    logger.info("一致性调整...")
+    logger.info("Running consistency adjustment...")
     df = consistency_adjustment(df)
     
-    logger.info("非负修正...")
+    logger.info("Running non-negative correction...")
     df = non_negative_correction(df)
     
-    # 只保留前7列（日期 + 6列数值）
+    # Keep final output columns only.
     output_df = df[['date'] + TARGETS].copy()
     
-    logger.info(f"保存结果到: {output_file}")
+    logger.info(f"Saving output to: {output_file}")
     output_df.to_excel(output_file, index=False)
     
     return output_df
@@ -469,35 +518,35 @@ def clean_supply_data(input_file, output_file):
 
 if __name__ == "__main__":
     print("="*50)
-    print("1c_clean_supply_data 开始执行！")
+    print("1c_clean_supply_data started")
     print("="*50)
     
-    # 查找输入文件或文件夹
+    # Find input source file or directory.
     possible_paths = [
-        INPUT_DIR,  # 优先读取整个文件夹（自动合并多个 Excel 文件）
+        INPUT_DIR,
         INPUT_DIR / "supply_data.xlsx",
-        INPUT_DIR / "generation_data.xlsx",  # 兼容旧文件名
-        Path("D:/一个文件夹/学习/学习/hku/sem2/MSDA7102/project/建模数据"),
-        Path(r"D:\一个文件夹\学习\学习\hku\sem2\MSDA7102\project\建模数据"),
+        INPUT_DIR / "generation_data.xlsx",
+        Path("D:/\u4e00\u4e2a\u6587\u4ef6\u5939/\u5b66\u4e60/\u5b66\u4e60/hku/sem2/MSDA7102/project/\u5efa\u6a21\u6570\u636e"),
+        Path(r"D:\\u4e00\u4e2a\u6587\u4ef6\u5939\\u5b66\u4e60\\u5b66\u4e60\hku\sem2\MSDA7102\project\\u5efa\u6a21\u6570\u636e"),
     ]
 
     input_file = None
     for path in possible_paths:
         if Path(path).exists():
             input_file = path
-            print(f"找到数据源: {path}")
+            print(f"Found data source: {path}")
             break
 
     if input_file is None:
-        print("ERROR: 找不到数据源，尝试的路径:")
+        print("ERROR: no data source found. Tried paths:")
         for path in possible_paths:
             print(f"  {path}")
     else:
         output_file = OUTPUT_DIR / "supply_filled.xlsx"
-        print(f"处理数据...")
+        print("Processing data...")
         result = clean_supply_data(str(input_file), str(output_file))
         if result is not None:
-            print(f"前20行预览:")
+            print("Preview of first 20 rows:")
             print(result.head(20))
-        print("处理完成！")
+        print("Processing completed")
 

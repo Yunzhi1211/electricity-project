@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-1b_clean_demand_data.py - 用电量数据清洗和补值
+1b_clean_demand_data.py - Demand Data Cleaning and Imputation
 
-插补方法思路分两步：
-第一，利用总用电量与各类型用电量之间的加总关系，对可直接反推的缺失值进行填补；
-第二，对仍然缺失的月份，构造年份、月份、滞后值和滚动均值等时间序列特征，
-使用随机森林模型预测缺失值。最后再做一致性调整，使总量与分项之和尽量匹配。
+Imputation uses two stages:
+1. Accounting-rule completion with total = sum(parts), including reverse
+    inference for single missing part columns.
+2. Random-forest prediction for remaining gaps using temporal features such as
+    year/month, lags, and rolling averages.
+
+Finally, values are adjusted for consistency so total demand aligns with the
+sum of demand categories as closely as possible.
 """
 
 import pandas as pd
@@ -13,66 +17,76 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from pathlib import Path
 
-# 基础配置
+# Base configuration
 BASE_DIR = Path(__file__).parent.parent
-INPUT_DIR = BASE_DIR / "cleaned_data"
-OUTPUT_DIR = BASE_DIR / "cleaned_data"
+INPUT_DIR = BASE_DIR / "4_output_anylogic"
+OUTPUT_DIR = BASE_DIR / "4_output_anylogic"
 
-# 参数区
+YEAR_START = 2010
+YEAR_END = 2025
+
+# Parameters
 FILE_PATH = INPUT_DIR / "demand_crawl.csv"
 OUTPUT_PATH = OUTPUT_DIR / "demand_filled.xlsx"
 
-# 你的日期列名
+# Date and target columns
 DATE_COL = 'date'
 TOTAL_COL = 'total_demand'
 PART_COLS = [
-    'primary_demand',      # 第一产业用电量
-    'secondary_demand',    # 第二产业用电量
-    'tertiary_demand',     # 第三产业用电量
-    'residential_demand',  # 居民生活用电量
+    'primary_demand',      # Electricity demand in the primary sector
+    'secondary_demand',    # Electricity demand in the secondary sector
+    'tertiary_demand',     # Electricity demand in the tertiary sector
+    'residential_demand',  # Residential electricity demand
 ]
 
-# 数据只想保留前7列（日期 + 6列数值），设置为 True
+# Keep only the first 7 columns (date + 6 numeric columns) when True.
 KEEP_FIRST_7_COLS = True
 
 
 def load_and_prepare(file_path):
-    """读取和基本清理数据"""
+    """Load and pre-clean input demand data."""
     df = pd.read_csv(file_path)
 
-    # 只保留前7列
+    # Keep a fixed schema width if configured.
     if KEEP_FIRST_7_COLS:
         df = df.iloc[:, :7].copy()
 
-    # 如果第一行/某些行有"日期"这样的说明文字，删掉
-    df = df[df[DATE_COL] != '日期'].copy()
+    # Drop description rows that contain a literal "date" label.
+    df = df[df[DATE_COL] != 'date'].copy()
 
-    # 日期转换
+    # Parse date column.
     df[DATE_COL] = pd.to_datetime(df[DATE_COL], errors='coerce')
 
-    # 删除日期为空的异常行
+    # Drop rows with invalid dates.
     df = df[df[DATE_COL].notna()].copy()
 
-    # 所有目标列
+    # Target columns.
     targets = [TOTAL_COL] + PART_COLS
 
-    # 数值转换
+    # Convert targets to numeric.
     for col in targets:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # 按日期升序
+    # Sort by date.
+    df = df.sort_values(DATE_COL).reset_index(drop=True)
+
+    # Keep only the modeling window (2010-2025).
+    df = df[
+        (df[DATE_COL].dt.year >= YEAR_START) &
+        (df[DATE_COL].dt.year <= YEAR_END)
+    ].copy()
     df = df.sort_values(DATE_COL).reset_index(drop=True)
     
     return df
 
 
 def add_temporal_features(df):
-    """添加时间特征"""
+    """Add temporal features used for imputation."""
     df['year'] = df[DATE_COL].dt.year
     df['month'] = df[DATE_COL].dt.month
     df['quarter'] = df[DATE_COL].dt.quarter
 
-    # 月份周期特征
+    # Cyclical month encoding.
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
     
@@ -80,19 +94,19 @@ def add_temporal_features(df):
 
 
 def fill_by_accounting(df, total_col, part_cols):
-    """会计恒等式补值：total = sum(parts)"""
+    """Fill values using accounting identity: total = sum(parts)."""
     changed = True
 
     while changed:
         changed = False
 
-        # 如果总量缺失，但所有分项都已知 -> 总量 = 分项和
+        # If total is missing but all parts exist, infer total.
         mask_total = df[total_col].isna() & df[part_cols].notna().all(axis=1)
         if mask_total.any():
             df.loc[mask_total, total_col] = df.loc[mask_total, part_cols].sum(axis=1)
             changed = True
 
-        # 如果某个分项缺失，但总量和其余分项都已知 -> 反推该分项
+        # If one part is missing and total + other parts exist, infer that part.
         for col in part_cols:
             other_parts = [c for c in part_cols if c != col]
             mask_part = (
@@ -111,35 +125,35 @@ def fill_by_accounting(df, total_col, part_cols):
 
 
 def create_temp_filled(df, col):
-    """临时补值函数，用于构造滞后/滚动特征时避免特征本身为缺失"""
+    """Create temporary filled series for lag/rolling feature construction."""
     temp = df[col].copy()
 
-    # 线性插值
+    # Linear interpolation.
     temp = temp.interpolate(method='linear')
 
-    # 同月份历史均值填补
+    # Fill remaining gaps by month-wise historical mean.
     month_mean = df.groupby('month')[col].transform('mean')
     temp = temp.fillna(month_mean)
 
-    # 仍缺失则用中位数
+    # Fall back to column median.
     temp = temp.fillna(df[col].median())
 
     return temp
 
 
 def add_series_features(df, col):
-    """构造时间序列特征"""
+    """Add lag and rolling features for one target column."""
     temp_col = f'{col}_temp'
     df[temp_col] = create_temp_filled(df, col)
 
-    # 滞后项
+    # Lag terms.
     df[f'{col}_lag_1'] = df[temp_col].shift(1)
     df[f'{col}_lag_2'] = df[temp_col].shift(2)
     df[f'{col}_lag_3'] = df[temp_col].shift(3)
     df[f'{col}_lag_6'] = df[temp_col].shift(6)
     df[f'{col}_lag_12'] = df[temp_col].shift(12)
 
-    # 滚动均值（注意都先shift(1)，防止用到当期信息）
+    # Rolling means shifted by 1 month to avoid data leakage.
     df[f'{col}_roll_mean_3'] = df[temp_col].shift(1).rolling(3).mean()
     df[f'{col}_roll_mean_6'] = df[temp_col].shift(1).rolling(6).mean()
     df[f'{col}_roll_mean_12'] = df[temp_col].shift(1).rolling(12).mean()
@@ -148,7 +162,7 @@ def add_series_features(df, col):
 
 
 def ml_fill_column(df, target_col):
-    """随机森林逐列补值"""
+    """Fill missing values for one column using Random Forest."""
     feature_cols = [
         'year', 'month', 'quarter', 'month_sin', 'month_cos',
         f'{target_col}_lag_1',
@@ -164,11 +178,11 @@ def ml_fill_column(df, target_col):
     train_df = df[df[target_col].notna()].copy()
     pred_df = df[df[target_col].isna()].copy()
 
-    # 没有缺失就直接返回
+    # Return immediately when no missing values exist.
     if pred_df.empty:
         return df
 
-    # 如果训练样本过少，则直接用月份均值/中位数填补
+    # For very small training sets, use month mean / median fallback.
     if len(train_df) < 12:
         month_mean_map = train_df.groupby('month')[target_col].mean()
         fill_vals = pred_df['month'].map(month_mean_map)
@@ -176,7 +190,7 @@ def ml_fill_column(df, target_col):
         df.loc[df[target_col].isna(), target_col] = fill_vals.values
         return df
 
-    # 特征缺失用训练集特征中位数填补
+    # Fill feature NaNs with training medians.
     for col in feature_cols:
         med = train_df[col].median()
         train_df[col] = train_df[col].fillna(med)
@@ -203,10 +217,10 @@ def ml_fill_column(df, target_col):
 
 
 def consistency_adjustment(df, total_col, part_cols):
-    """一致性调整：让分项之和尽量等于总量"""
+    """Scale parts so their sum aligns with total demand."""
     sum_parts = df[part_cols].sum(axis=1)
 
-    # 避免除零
+    # Avoid division-by-zero.
     ratio = np.where(sum_parts > 0, df[total_col] / sum_parts, 1)
 
     for col in part_cols:
@@ -216,32 +230,32 @@ def consistency_adjustment(df, total_col, part_cols):
 
 
 def clean_demand_data(input_file, output_file):
-    """主流程：读取 -> 清洗 -> 填补 -> 保存"""
-    print(f"开始读取数据: {input_file}")
+    """Main flow: load -> clean -> impute -> save."""
+    print(f"Loading data: {input_file}")
     df = load_and_prepare(input_file)
     
-    print("添加时间特征...")
+    print("Adding temporal features...")
     df = add_temporal_features(df)
     
-    print("会计恒等式补值...")
+    print("Applying accounting-rule completion...")
     df = fill_by_accounting(df, TOTAL_COL, PART_COLS)
     
-    print("构造时间序列特征...")
+    print("Building time-series features...")
     targets = [TOTAL_COL] + PART_COLS
     for col in targets:
         df = add_series_features(df, col)
     
-    print("随机森林补值...")
+    print("Running random-forest imputation...")
     for col in targets:
         df = ml_fill_column(df, col)
     
-    print("一致性调整...")
+    print("Applying consistency adjustment...")
     df = consistency_adjustment(df, TOTAL_COL, PART_COLS)
     
-    # 只保留前7列（日期 + 6列数值）
+    # Output only date + five demand columns.
     output_df = df[[DATE_COL] + [TOTAL_COL] + PART_COLS].copy()
     
-    print(f"保存结果到: {output_file}")
+    print(f"Saving output to: {output_file}")
     output_df.to_excel(output_file, index=False)
     
     return output_df
@@ -249,10 +263,10 @@ def clean_demand_data(input_file, output_file):
 
 if __name__ == "__main__":
     if FILE_PATH.exists():
-        print(f"处理文件: {FILE_PATH}")
+        print(f"Processing file: {FILE_PATH}")
         result = clean_demand_data(str(FILE_PATH), str(OUTPUT_PATH))
-        print(f"前20行预览:")
+        print("Preview of first 20 rows:")
         print(result.head(20))
     else:
-        print(f"输入文件不存在: {FILE_PATH}")
-        print("请先运行 1a_crawl_national_demand.py 获取数据")
+        print(f"Input file not found: {FILE_PATH}")
+        print("Run 1a_crawl_national_demand.py first to fetch source demand data")

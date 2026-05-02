@@ -1,230 +1,246 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-2b_calculate_indicators.py - 能源指标计算
+2b_calculate_indicators.py - Energy Indicator Calculation
 
-功能：
-- 计算供需平衡指标
-- 计算结构占比指标
-- 计算增长率指标
-- 计算季节性指标
+Purpose:
+- Compute supply-demand balance metrics
+- Compute structural share metrics
+- Compute growth metrics
+- Compute seasonality metrics
 
-输入：merged_energy_data.csv
-输出：energy_indicators.csv
+Input: 1_merged_energy_data.csv
+Output: 2_energy_indicators.csv
 
-作者：Yunzhi
-创建时间：2026-04-15
+Author: Yunzhi
+Created: 2026-04-15
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# 目录配置
+# Directory configuration
 BASE_DIR = Path(__file__).parent.parent
-INPUT_DIR = BASE_DIR / "2_process_validate"
-OUTPUT_DIR = BASE_DIR / "2_process_validate"
+INPUT_DIR = BASE_DIR / "3_output_check_report"
+OUTPUT_DIR = BASE_DIR / "3_output_check_report"
 
 
 def load_merged_data() -> pd.DataFrame:
-    """加载合并后的数据"""
-    input_file = INPUT_DIR / "merged_energy_data.csv"
+    """Load merged dataset."""
+    input_file = INPUT_DIR / "1_merged_energy_data.csv"
 
     if not input_file.exists():
-        raise FileNotFoundError(f"找不到合并数据文件: {input_file}")
+        raise FileNotFoundError(f"Merged data file not found: {input_file}")
 
     df = pd.read_csv(input_file)
     df['date'] = pd.to_datetime(df['date'])
 
-    print(f"加载合并数据: {df.shape}")
+    print(f"Loaded merged data: {df.shape}")
     return df
 
 
 def calculate_balance_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """计算供需平衡指标"""
+    """Calculate supply-demand balance indicators."""
     df = df.copy()
 
-    # 供需平衡比
-    if 'total_gen' in df.columns and 'total_demand' in df.columns:
-        df['supply_demand_ratio'] = df['total_gen'] / df['total_demand']
+    # Supply-demand ratio.
+    if 'total_supply' in df.columns and 'total_demand' in df.columns:
+        df['supply_demand_ratio'] = df['total_supply'] / df['total_demand']
 
-        # 供需平衡状态
+        # Balance state categories.
         df['balance_status'] = pd.cut(
             df['supply_demand_ratio'],
             bins=[0, 0.95, 1.05, float('inf')],
-            labels=['供不应求', '基本平衡', '供过于求']
+            labels=['undersupply', 'balanced', 'oversupply']
         )
 
-    # 峰谷差率（如果有日数据可以计算）
-    # 这里暂时跳过，因为是月度数据
+    # Peak-valley spread is omitted because this is monthly data.
 
-    print("供需平衡指标计算完成")
+    print("Balance indicators calculated")
     return df
 
 
 def calculate_structure_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """计算结构占比指标"""
+    """Calculate structural share indicators."""
     df = df.copy()
 
-    # 发电结构占比
-    gen_cols = ['thermal_gen', 'hydro_gen', 'nuclear_gen', 'wind_gen', 'solar_gen']
-    if all(col in df.columns for col in gen_cols) and 'total_gen' in df.columns:
+    # Generation structure shares.
+    # Use non-negative clipped components and normalize by the clipped component sum,
+    # which is more robust when raw source data contains occasional negative corrections.
+    gen_cols = ['thermal_supply', 'hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
+    if all(col in df.columns for col in gen_cols):
+        gen_components = df[gen_cols].clip(lower=0)
+        gen_total = gen_components.sum(axis=1).replace(0, np.nan)
         for col in gen_cols:
-            df[f'{col}_share'] = df[col] / df['total_gen']
+            df[f'{col}_share'] = (gen_components[col] / gen_total).fillna(0)
 
-    # 用电结构占比
+    # Demand structure shares.
     demand_cols = ['primary_demand', 'secondary_demand', 'tertiary_demand', 'residential_demand']
-    if all(col in df.columns for col in demand_cols) and 'total_demand' in df.columns:
+    if all(col in df.columns for col in demand_cols):
+        demand_components = df[demand_cols].clip(lower=0)
+        demand_total = demand_components.sum(axis=1).replace(0, np.nan)
         for col in demand_cols:
-            df[f'{col}_share'] = df[col] / df['total_demand']
+            df[f'{col}_share'] = (demand_components[col] / demand_total).fillna(0)
 
-    print("结构占比指标计算完成")
+    print("Structure indicators calculated")
     return df
 
 
 def calculate_growth_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """计算增长率指标"""
+    """Calculate growth indicators."""
     df = df.copy()
 
-    # 数值列
+    # Numeric columns.
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     target_cols = [col for col in numeric_cols if col not in ['date', 'year', 'month', 'quarter', 'month_sin', 'month_cos']]
 
-    # 计算同比增长率 (YoY)
+    # Winsorize each target series before computing growth to limit outlier influence.
+    winsorized = {}
     for col in target_cols:
-        if col in df.columns:
-            df[f'{col}_yoy'] = df[col].pct_change(12)
+        series = df[col]
+        valid = series.dropna()
+        if len(valid) < 24:
+            winsorized[col] = series
+            continue
+        lower = valid.quantile(0.01)
+        upper = valid.quantile(0.99)
+        winsorized[col] = series.clip(lower=lower, upper=upper)
 
-    # 计算环比增长率 (MoM)
+    # Year-over-year growth (YoY).
     for col in target_cols:
-        if col in df.columns:
-            df[f'{col}_mom'] = df[col].pct_change(1)
+        if col in winsorized:
+            df[f'{col}_yoy'] = winsorized[col].pct_change(12)
 
-    # 计算3个月移动平均增长率
+    # Month-over-month growth (MoM).
+    for col in target_cols:
+        if col in winsorized:
+            df[f'{col}_mom'] = winsorized[col].pct_change(1)
+
+    # 3-month moving average of YoY growth.
     for col in target_cols:
         if col in df.columns:
             df[f'{col}_yoy_ma3'] = df[f'{col}_yoy'].rolling(3).mean()
 
-    print("增长率指标计算完成")
+    print("Growth indicators calculated")
     return df
 
 
 def calculate_seasonal_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """计算季节性指标"""
+    """Calculate seasonality indicators."""
     df = df.copy()
 
-    # 添加月份信息（如果还没有）
+    # Ensure month column exists.
     if 'month' not in df.columns:
         df['month'] = df['date'].dt.month
 
-    # 计算季节性指数（以年均值为基准）
-    numeric_cols = ['total_demand', 'total_gen', 'thermal_gen', 'hydro_gen',
-                   'nuclear_gen', 'wind_gen', 'solar_gen']
+    # Seasonal index relative to yearly mean.
+    numeric_cols = ['total_demand', 'total_supply', 'thermal_supply', 'hydro_supply',
+                   'nuclear_supply', 'wind_supply', 'solar_supply']
 
     for col in numeric_cols:
         if col in df.columns:
-            # 计算年均值
+            # Compute yearly mean.
             yearly_mean = df.groupby(df['date'].dt.year)[col].transform('mean')
             df[f'{col}_seasonal'] = df[col] / yearly_mean
 
-    # 计算季节性强度
+    # Seasonal strength index.
     for col in numeric_cols:
         if f'{col}_seasonal' in df.columns:
-            # 计算每个月的季节性平均值
+            # Monthly seasonal benchmark.
             monthly_seasonal = df.groupby('month')[f'{col}_seasonal'].transform('mean')
             df[f'{col}_seasonal_strength'] = df[f'{col}_seasonal'] / monthly_seasonal
 
-    print("季节性指标计算完成")
+    print("Seasonality indicators calculated")
     return df
 
 
 def calculate_efficiency_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """计算效率指标"""
+    """Calculate efficiency indicators."""
     df = df.copy()
 
-    # 发电效率指标（简化计算）
-    if 'total_gen' in df.columns and 'total_demand' in df.columns:
-        # 假设的系统效率（实际应该有更精确的计算）
-        df['system_efficiency'] = df['total_demand'] / (df['total_gen'] * 1.1)  # 考虑10%损耗
+    # Simplified system efficiency indicator.
+    if 'total_supply' in df.columns and 'total_demand' in df.columns:
+        # Assumes 10% system loss for a coarse estimate.
+        df['system_efficiency'] = df['total_demand'] / (df['total_supply'] * 1.1)
 
-    # 可再生能源占比
-    renewable_cols = ['hydro_gen', 'nuclear_gen', 'wind_gen', 'solar_gen']
-    if all(col in df.columns for col in renewable_cols) and 'total_gen' in df.columns:
-        df['renewable_share'] = df[renewable_cols].sum(axis=1) / df['total_gen']
+    # Renewable share.
+    renewable_cols = ['hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
+    if all(col in df.columns for col in renewable_cols) and 'total_supply' in df.columns:
+        df['renewable_share'] = df[renewable_cols].sum(axis=1) / df['total_supply']
 
-    # 清洁能源占比（不含煤电）
-    clean_cols = ['hydro_gen', 'nuclear_gen', 'wind_gen', 'solar_gen']
-    if all(col in df.columns for col in clean_cols) and 'total_gen' in df.columns:
-        df['clean_energy_share'] = df[clean_cols].sum(axis=1) / df['total_gen']
+    # Clean energy share.
+    clean_cols = ['hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
+    if all(col in df.columns for col in clean_cols) and 'total_supply' in df.columns:
+        df['clean_energy_share'] = df[clean_cols].sum(axis=1) / df['total_supply']
 
-    print("效率指标计算完成")
+    print("Efficiency indicators calculated")
     return df
 
 
 def validate_indicators(df: pd.DataFrame) -> None:
-    """验证计算的指标"""
-    print("\n=== 指标验证 ===")
+    """Run basic sanity checks on computed indicators."""
+    print("\n=== Indicator Validation ===")
 
-    # 检查供需平衡比的合理性
+    # Check supply-demand ratio sanity.
     if 'supply_demand_ratio' in df.columns:
         ratio_stats = df['supply_demand_ratio'].describe()
-        print(f"供需比统计: 均值={ratio_stats['mean']:.3f}, 范围=[{ratio_stats['min']:.3f}, {ratio_stats['max']:.3f}]")
+        print(f"Supply-demand ratio stats: mean={ratio_stats['mean']:.3f}, range=[{ratio_stats['min']:.3f}, {ratio_stats['max']:.3f}]")
 
-        # 检查异常值
+        # Detect outliers.
         outliers = df[(df['supply_demand_ratio'] < 0.5) | (df['supply_demand_ratio'] > 2.0)]
         if len(outliers) > 0:
-            print(f"警告：发现 {len(outliers)} 个异常供需比值")
+            print(f"Warning: found {len(outliers)} abnormal supply-demand ratios")
 
-    # 检查占比之和是否为1
+    # Check whether shares sum to 1.
     share_cols = [col for col in df.columns if col.endswith('_share')]
-    for base_col in ['total_gen', 'total_demand']:
+    for base_col in ['total_supply', 'total_demand']:
         related_shares = [col for col in share_cols if base_col.replace('total_', '') in col]
         if related_shares:
             share_sum = df[related_shares].sum(axis=1)
             max_deviation = abs(share_sum - 1).max()
-            print(f"{base_col} 占比之和最大偏差: {max_deviation:.6f}")
+            print(f"Max share-sum deviation for {base_col}: {max_deviation:.6f}")
 
-    # 检查增长率的合理性
+    # Check growth-rate sanity.
     yoy_cols = [col for col in df.columns if col.endswith('_yoy')]
     for col in yoy_cols:
         if df[col].notna().any():
             yoy_stats = df[col].describe()
-            extreme_growth = df[abs(df[col]) > 1.0]  # 增长率超过100%
+            extreme_growth = df[abs(df[col]) > 1.0]
             if len(extreme_growth) > 0:
-                print(f"警告：{col} 发现 {len(extreme_growth)} 个极端增长率值")
+                print(f"Warning: {col} has {len(extreme_growth)} extreme growth values")
 
 
 def save_indicators(df: pd.DataFrame) -> None:
-    """保存计算后的指标"""
-    output_file = OUTPUT_DIR / "energy_indicators.csv"
+    """Save calculated indicators."""
+    output_file = OUTPUT_DIR / "2_energy_indicators.csv"
     df.to_csv(output_file, index=False, encoding='utf-8-sig')
-    print(f"\n指标数据已保存: {output_file}")
+    print(f"\nIndicator data saved: {output_file}")
 
 
 def main():
-    """主函数"""
-    print("=== 能源指标计算 ===")
+    """Main entry point."""
+    print("=== Energy Indicator Calculation ===")
 
-    # 加载数据
+    # Load data.
     df = load_merged_data()
 
-    # 计算各类指标
+    # Calculate all indicators.
     df = calculate_balance_indicators(df)
     df = calculate_structure_indicators(df)
     df = calculate_growth_indicators(df)
     df = calculate_seasonal_indicators(df)
     df = calculate_efficiency_indicators(df)
 
-    # 验证指标
+    # Validate indicators.
     validate_indicators(df)
 
-    # 保存结果
+    # Save output.
     save_indicators(df)
 
-    print(f"\n最终数据集形状: {df.shape}")
-    print("=== 指标计算完成 ===")
+    print(f"\nFinal dataset shape: {df.shape}")
+    print("=== Indicator Calculation Completed ===")
 
 
 if __name__ == "__main__":
-    main()</content>
-<parameter name="filePath">d:\一个文件夹\学习\学习\hku\sem2\MSDA7102\project\project\wholepackage\1_process_data\2b_calculate_indicators.py
+    main()

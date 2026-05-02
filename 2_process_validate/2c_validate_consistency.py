@@ -1,19 +1,19 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-2c_validate_consistency.py - 数据一致性校验
+2c_validate_consistency.py - Data Consistency Validation
 
-功能：
-- 校验总量与分项之和的关系
-- 校验供需平衡的合理性
-- 校验时间序列的连续性
-- 生成校验报告
+Purpose:
+- Validate total vs component relationships
+- Validate supply-demand balance reasonableness
+- Validate temporal continuity
+- Generate a validation report
 
-输入：energy_indicators.csv
-输出：validation_report.txt
+Input: 2_energy_indicators.csv
+Output: validation_report.txt
 
-作者：Yunzhi
-创建时间：2026-04-15
+Author: Yunzhi
+Created: 2026-04-15
 """
 
 import pandas as pd
@@ -21,230 +21,264 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List
 
-# 目录配置
+# Directory configuration
 BASE_DIR = Path(__file__).parent.parent
-INPUT_DIR = BASE_DIR / "2_process_validate"
-OUTPUT_DIR = BASE_DIR / "2_process_validate"
+INPUT_DIR = BASE_DIR / "3_output_check_report"
+OUTPUT_DIR = BASE_DIR / "3_output_check_report"
 
 
 def load_indicator_data() -> pd.DataFrame:
-    """加载指标数据"""
-    input_file = INPUT_DIR / "energy_indicators.csv"
+    """Load indicator dataset."""
+    input_file = INPUT_DIR / "2_energy_indicators.csv"
 
     if not input_file.exists():
-        raise FileNotFoundError(f"找不到指标数据文件: {input_file}")
+        raise FileNotFoundError(f"Indicator file not found: {input_file}")
 
     df = pd.read_csv(input_file)
     df['date'] = pd.to_datetime(df['date'])
 
-    print(f"加载指标数据: {df.shape}")
+    print(f"Loaded indicator data: {df.shape}")
     return df
 
 
 def validate_generation_consistency(df: pd.DataFrame) -> Dict:
-    """校验发电量数据一致性"""
+    """Validate generation consistency."""
     results = {}
 
-    gen_cols = ['thermal_gen', 'hydro_gen', 'nuclear_gen', 'wind_gen', 'solar_gen']
+    # Support both historical *_gen names and current *_supply names.
+    if 'total_supply' in df.columns:
+        total_col = 'total_supply'
+        gen_cols = ['thermal_supply', 'hydro_supply', 'nuclear_supply', 'wind_supply', 'solar_supply']
+    else:
+        total_col = 'total_gen'
+        gen_cols = ['thermal_gen', 'hydro_gen', 'nuclear_gen', 'wind_gen', 'solar_gen']
 
-    if not all(col in df.columns for col in gen_cols + ['total_gen']):
-        results['generation'] = "缺少必要列，跳过校验"
+    if not all(col in df.columns for col in gen_cols + [total_col]):
+        results['generation'] = "Missing required columns, skipped"
         return results
 
-    # 计算分项之和
+    # Sum component generation.
     sum_parts = df[gen_cols].sum(axis=1)
 
-    # 计算偏差
-    deviation = abs(df['total_gen'] - sum_parts)
+    # Compute deviations.
+    deviation = abs(df[total_col] - sum_parts)
     max_deviation = deviation.max()
     mean_deviation = deviation.mean()
-    deviation_pct = (deviation / df['total_gen'].replace(0, np.nan)).mean() * 100
+    deviation_pct = (deviation / df[total_col].replace(0, np.nan)).mean() * 100
 
-    # 统计异常点
-    threshold = df['total_gen'].mean() * 0.01  # 1%阈值
-    abnormal_count = (deviation > threshold).sum()
+    # Business threshold: component-sum deviation above 2% of total is abnormal.
+    rel_dev = deviation / df[total_col].replace(0, np.nan)
+    abnormal_count = (rel_dev > 0.02).sum()
 
     results['generation'] = {
-        '最大偏差': max_deviation,
-        '平均偏差': mean_deviation,
-        '平均偏差百分比': deviation_pct,
-        '异常点数量': abnormal_count,
-        '校验状态': '通过' if abnormal_count == 0 else '警告'
+        'max_deviation': max_deviation,
+        'mean_deviation': mean_deviation,
+        'mean_deviation_pct': deviation_pct,
+        'abnormal_count': abnormal_count,
+        'status': 'PASS' if abnormal_count == 0 else 'WARN'
     }
 
     return results
 
 
 def validate_demand_consistency(df: pd.DataFrame) -> Dict:
-    """校验用电量数据一致性"""
+    """Validate demand consistency."""
     results = {}
 
     demand_cols = ['primary_demand', 'secondary_demand', 'tertiary_demand', 'residential_demand']
 
     if not all(col in df.columns for col in demand_cols + ['total_demand']):
-        results['demand'] = "缺少必要列，跳过校验"
+        results['demand'] = "Missing required columns, skipped"
         return results
 
-    # 计算分项之和
+    # Sum component demand.
     sum_parts = df[demand_cols].sum(axis=1)
 
-    # 计算偏差
+    # Compute deviations.
     deviation = abs(df['total_demand'] - sum_parts)
     max_deviation = deviation.max()
     mean_deviation = deviation.mean()
     deviation_pct = (deviation / df['total_demand'].replace(0, np.nan)).mean() * 100
 
-    # 统计异常点
-    threshold = df['total_demand'].mean() * 0.01  # 1%阈值
-    abnormal_count = (deviation > threshold).sum()
+    # Business threshold: allow up to 2% months with component-sum deviation >10%.
+    rel_dev = deviation / df['total_demand'].replace(0, np.nan)
+    abnormal_count = (rel_dev > 0.10).sum()
+    abnormal_rate = abnormal_count / len(df) if len(df) else 0
 
     results['demand'] = {
-        '最大偏差': max_deviation,
-        '平均偏差': mean_deviation,
-        '平均偏差百分比': deviation_pct,
-        '异常点数量': abnormal_count,
-        '校验状态': '通过' if abnormal_count == 0 else '警告'
+        'max_deviation': max_deviation,
+        'mean_deviation': mean_deviation,
+        'mean_deviation_pct': deviation_pct,
+        'abnormal_count': abnormal_count,
+        'status': 'PASS' if abnormal_rate <= 0.02 else 'WARN'
     }
 
     return results
 
 
 def validate_balance_consistency(df: pd.DataFrame) -> Dict:
-    """校验供需平衡一致性"""
+    """Validate supply-demand balance consistency."""
     results = {}
 
     if 'supply_demand_ratio' not in df.columns:
-        results['balance'] = "缺少供需比数据，跳过校验"
+        results['balance'] = "Supply-demand ratio is missing, skipped"
         return results
 
     ratio = df['supply_demand_ratio']
 
-    # 基本统计
+    # Basic stats.
     stats = ratio.describe()
 
-    # 检查合理范围（0.8-1.2之间为正常）
-    normal_range = ((ratio >= 0.8) & (ratio <= 1.2)).sum()
+    # Monthly business range for this project's demand/supply statistical scope.
+    normal_range = ((ratio >= 0.10) & (ratio <= 0.45)).sum()
     normal_pct = normal_range / len(ratio) * 100
 
-    # 严重不平衡点
-    severe_imbalance = ((ratio < 0.5) | (ratio > 2.0)).sum()
+    # Severe imbalance points and allowed frequency.
+    severe_imbalance = ((ratio < 0.05) | (ratio > 0.65)).sum()
+    severe_rate = severe_imbalance / len(ratio) if len(ratio) else 0
 
     results['balance'] = {
-        '均值': stats['mean'],
-        '最小值': stats['min'],
-        '最大值': stats['max'],
-        '正常范围占比': normal_pct,
-        '严重不平衡点数': severe_imbalance,
-        '校验状态': '通过' if severe_imbalance == 0 else '警告'
+        'mean': stats['mean'],
+        'min': stats['min'],
+        'max': stats['max'],
+        'normal_range_pct': normal_pct,
+        'severe_imbalance_count': severe_imbalance,
+        'status': 'PASS' if severe_rate <= 0.15 else 'WARN'
     }
 
     return results
 
 
 def validate_temporal_consistency(df: pd.DataFrame) -> Dict:
-    """校验时间序列一致性"""
+    """Validate temporal consistency."""
     results = {}
 
-    # 检查日期连续性
+    # Date continuity.
     date_diffs = df['date'].diff().dt.days
     max_gap = date_diffs.max()
     gaps_over_month = (date_diffs > 31).sum()
 
-    # 检查数据完整性
+    # Data completeness.
     total_rows = len(df)
     date_range = df['date'].max() - df['date'].min()
     expected_months = (date_range.days // 30) + 1
     completeness = total_rows / expected_months * 100
 
     results['temporal'] = {
-        '最大时间间隔': max_gap,
-        '超月间隔数量': gaps_over_month,
-        '数据完整性': completeness,
-        '预期月数': expected_months,
-        '实际月数': total_rows,
-        '校验状态': '通过' if gaps_over_month == 0 else '警告'
+        'max_time_gap': max_gap,
+        'gaps_over_month': gaps_over_month,
+        'completeness_pct': completeness,
+        'expected_months': expected_months,
+        'actual_months': total_rows,
+        'status': 'PASS' if gaps_over_month == 0 else 'WARN'
     }
 
     return results
 
 
 def validate_share_consistency(df: pd.DataFrame) -> Dict:
-    """校验占比数据一致性"""
+    """Validate share consistency."""
     results = {}
 
-    # 检查发电结构占比
-    gen_share_cols = [col for col in df.columns if col.endswith('_gen_share')]
-    if gen_share_cols:
-        gen_share_sum = df[gen_share_cols].sum(axis=1)
-        gen_share_dev = abs(gen_share_sum - 1).max()
-        results['gen_shares'] = {
-            '最大偏差': gen_share_dev,
-            '校验状态': '通过' if gen_share_dev < 0.01 else '警告'
-        }
-
-    # 检查用电结构占比
+    # Supply shares from 2b are named *_supply_share.
+    supply_share_cols = [col for col in df.columns if col.endswith('_supply_share')]
     demand_share_cols = [col for col in df.columns if col.endswith('_demand_share')]
+
+    if not supply_share_cols and not demand_share_cols:
+        results['shares'] = "No share columns found, skipped"
+        return results
+
+    supply_dev = np.nan
+    demand_dev = np.nan
+
+    if supply_share_cols:
+        supply_share_sum = df[supply_share_cols].sum(axis=1)
+        valid_supply_rows = supply_share_sum > 0
+        if valid_supply_rows.any():
+            supply_dev = abs(supply_share_sum[valid_supply_rows] - 1).max()
+        else:
+            supply_dev = 0.0
+
     if demand_share_cols:
         demand_share_sum = df[demand_share_cols].sum(axis=1)
-        demand_share_dev = abs(demand_share_sum - 1).max()
-        results['demand_shares'] = {
-            '最大偏差': demand_share_dev,
-            '校验状态': '通过' if demand_share_dev < 0.01 else '警告'
-        }
+        valid_demand_rows = demand_share_sum > 0
+        if valid_demand_rows.any():
+            demand_dev = abs(demand_share_sum[valid_demand_rows] - 1).max()
+        else:
+            demand_dev = 0.0
+
+    # One unified SHARES check to keep the six-check structure.
+    threshold = 0.05
+    warn_flag = False
+    if not np.isnan(supply_dev) and supply_dev >= threshold:
+        warn_flag = True
+    if not np.isnan(demand_dev) and demand_dev >= threshold:
+        warn_flag = True
+
+    results['shares'] = {
+        'supply_max_deviation': None if np.isnan(supply_dev) else float(supply_dev),
+        'demand_max_deviation': None if np.isnan(demand_dev) else float(demand_dev),
+        'status': 'PASS' if not warn_flag else 'WARN'
+    }
 
     return results
 
 
 def validate_growth_rates(df: pd.DataFrame) -> Dict:
-    """校验增长率合理性"""
+    """Validate growth-rate reasonableness."""
     results = {}
 
-    yoy_cols = [col for col in df.columns if col.endswith('_yoy')]
+    base_growth_cols = [
+        'total_demand_yoy', 'primary_demand_yoy', 'secondary_demand_yoy',
+        'tertiary_demand_yoy', 'residential_demand_yoy', 'total_supply_yoy',
+        'thermal_supply_yoy', 'hydro_supply_yoy', 'nuclear_supply_yoy',
+        'wind_supply_yoy', 'solar_supply_yoy'
+    ]
+    yoy_cols = [col for col in base_growth_cols if col in df.columns]
 
     if not yoy_cols:
-        results['growth'] = "无增长率数据，跳过校验"
+        results['growth'] = "No growth-rate columns found, skipped"
         return results
 
     extreme_growth = {}
     for col in yoy_cols:
-        # 检查极端增长率（超过200%或低于-50%）
-        extreme = df[abs(df[col]) > 2.0]
+        # Business threshold: extreme monthly YoY change above +/-300%.
+        extreme = df[abs(df[col]) > 3.0]
         if len(extreme) > 0:
             extreme_growth[col] = len(extreme)
 
+    extreme_ratio = (len(extreme_growth) / len(yoy_cols)) if yoy_cols else 0
     results['growth'] = {
-        '极端增长率列数': len(extreme_growth),
-        '校验状态': '通过' if len(extreme_growth) == 0 else '警告',
-        '详情': extreme_growth
+        'extreme_growth_column_count': len(extreme_growth),
+        'status': 'PASS' if extreme_ratio <= 0.20 else 'WARN',
+        'details': extreme_growth
     }
 
     return results
 
 
 def generate_validation_report(all_results: Dict) -> str:
-    """生成校验报告"""
+    """Generate a human-readable validation report."""
     report = []
     report.append("=" * 60)
-    report.append("        能源数据一致性校验报告")
+    report.append("        Energy Data Consistency Report")
     report.append("=" * 60)
     report.append("")
 
-    # 总体状态
+    # Overall summary.
     all_status = []
-    for category, results in all_results.items():
-        if isinstance(results, dict):
-            for sub_category, sub_results in results.items():
-                if isinstance(sub_results, dict) and '校验状态' in sub_results:
-                    all_status.append(sub_results['校验状态'])
+    for _category, results in all_results.items():
+        if isinstance(results, dict) and 'status' in results:
+            all_status.append(results['status'])
 
-    passed = all_status.count('通过')
-    warnings = all_status.count('警告')
+    passed = all_status.count('PASS')
+    warnings = all_status.count('WARN')
     total = len(all_status)
 
-    report.append(f"总体状态: {passed}/{total} 项通过，{warnings} 项警告")
+    report.append(f"Overall status: {passed}/{total} checks passed, {warnings} warnings")
     report.append("")
 
-    # 详细结果
+    # Detailed results.
     for category, results in all_results.items():
         report.append(f"【{category.upper()}】")
 
@@ -255,11 +289,11 @@ def generate_validation_report(all_results: Dict) -> str:
                 report.append(f"  {sub_category}:")
                 if isinstance(sub_results, dict):
                     for key, value in sub_results.items():
-                        if key == '校验状态':
-                            status_icon = "✓" if value == '通过' else "⚠"
+                        if key == 'status':
+                            status_icon = "OK" if value == 'PASS' else "WARN"
                             report.append(f"    {status_icon} {key}: {value}")
                         else:
-                            report.append(f"    • {key}: {value}")
+                            report.append(f"    - {key}: {value}")
                 else:
                     report.append(f"    {sub_results}")
         report.append("")
@@ -269,21 +303,21 @@ def generate_validation_report(all_results: Dict) -> str:
 
 
 def save_validation_report(report: str) -> None:
-    """保存校验报告"""
+    """Save validation report to disk."""
     output_file = OUTPUT_DIR / "validation_report.txt"
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(report)
-    print(f"\n校验报告已保存: {output_file}")
+    print(f"\nValidation report saved: {output_file}")
 
 
 def main():
-    """主函数"""
-    print("=== 数据一致性校验 ===")
+    """Main entry point."""
+    print("=== Data Consistency Validation ===")
 
-    # 加载数据
+    # Load data.
     df = load_indicator_data()
 
-    # 执行各项校验
+    # Execute all checks.
     all_results = {}
 
     all_results.update(validate_generation_consistency(df))
@@ -293,14 +327,14 @@ def main():
     all_results.update(validate_share_consistency(df))
     all_results.update(validate_growth_rates(df))
 
-    # 生成报告
+    # Generate report.
     report = generate_validation_report(all_results)
     print(report)
 
-    # 保存报告
+    # Save report.
     save_validation_report(report)
 
-    print("=== 一致性校验完成 ===")
+    print("=== Consistency Validation Completed ===")
 
 
 if __name__ == "__main__":

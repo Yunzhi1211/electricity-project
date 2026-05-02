@@ -27,7 +27,7 @@ MANIFEST
 venv/
 ENV/
 env/
-.venv
+.venv/
 
 # IDE
 .vscode/
@@ -39,8 +39,23 @@ env/
 
 # Logs
 *.log
-pipeline.log
+0_log/
 
-# Data files (optional - uncomment if you want to track data)
-# 0_raw_data/
-# cleaned_data/
+# Raw and intermediate data (large files, not tracked)
+0_raw_data/
+
+# Filled/cleaned data outputs (reproducible from pipeline)
+4_output_anylogic/demand_filled.xlsx
+4_output_anylogic/supply_filled.xlsx
+
+# Check report CSVs and model inputs (reproducible from pipeline)
+3_output_check_report/1_merged_energy_data.csv
+3_output_check_report/2_energy_indicators.csv
+3_output_check_report/3_1_demand_monthly.csv
+3_output_check_report/3_2_generation_monthly.csv
+3_output_check_report/3_3_energy_balance.csv
+3_output_check_report/4_model_inputs.xlsx
+
+# AnyLogic model binaries (track source files only if needed)
+5_anylogic_model/*.alp
+5_anylogic_model/*.jar

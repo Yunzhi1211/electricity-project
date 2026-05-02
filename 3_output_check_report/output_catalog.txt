@@ -1,0 +1,128 @@
+3_output_check_report usage
+
+1_merged_energy_data.csv
+Purpose: merged monthly demand and supply dataset for validation and indicator calculation.
+Core operation: outer merge by normalized month date.
+
+2_energy_indicators.csv
+Purpose: derived indicator table for consistency checks and downstream analysis.
+Key formulas:
+- supply_demand_ratio = total_supply / total_demand
+- source_share = source_supply / sum(nonnegative_supply_components)
+- demand_share = sector_demand / sum(nonnegative_demand_components)
+- yoy = winsorized_value_t / winsorized_value_t-12 - 1
+- mom = winsorized_value_t / winsorized_value_t-1 - 1
+
+3_Volatility summary (highest month-on-month volatility by group)
+  3_1_demand_monthly   : primary_demand_mom (std=15.3946)
+  3_2_generation_monthly: wind_supply_mom (std=7.9876)
+  3_3_energy_balance   : supply_demand_ratio_mom (std=4.6816)
+
+4_model_inputs.xlsx
+Purpose: consolidated indicator workbook (date + all derived indicator columns only).
+
+Interpretation of validation checks and warnings (6 checks):
+- GENERATION: compares total_supply with the sum of component supplies; warning means component accounting mismatch exceeds threshold.
+- DEMAND: compares total_demand with sector-demand sum; warning means sector accounting mismatch is frequent or large.
+- BALANCE: evaluates supply_demand_ratio range and severe-imbalance frequency; warning means sustained over/under-supply risk.
+- TEMPORAL: checks date continuity and completeness; warning means missing months or abnormal time gaps.
+- SHARES: checks whether supply-share and demand-share sums are close to 1; warning means share composition inconsistency.
+- GROWTH: checks extreme YoY changes across core business series; warning means multiple columns show unusually large growth shocks.
+Note: if a check is PASS in the current report, it will not be considered a warning for this run.
+Evidence-based explanation for warning causes:
+- BALANCE warning reflects sustained supply-demand imbalance: China's power system exhibits regional excess thermal generation capacity driven by over-investment in coal-fired units alongside demand-side volatility from industrial cycles and weather-sensitive load (Lin et al., 2018; Ming et al., 2017).
+- Demand-side growth warnings are consistent with macro cycle shocks, structural industrial transition, and climate-driven load variability; electricity consumption decouples from GDP growth during business-cycle downturns and structural reform phases (Lin & Liu, 2016); rising temperatures significantly increase peak load, with each 1°C increase adding approximately 0.385 GW to provincial peak demand on average (Chen et al., 2021).
+- Supply-side growth warnings are consistent with hydrology uncertainty, renewable intermittency, and rapid capacity expansion; wind, solar, and hydro curtailment resulting from grid integration constraints and dispatch barriers is a persistent feature of China's power system (Li et al., 2015; Liu et al., 2018).
+
+Why this report leads to the following AnyLogic design:
+- Because GROWTH shows persistent extreme columns, demand and supply agents should include shock regimes with heterogeneous adaptation speeds.
+- Because BALANCE still has severe imbalance months, dispatch logic should explicitly model priority rules, outage states, and demand-response behavior.
+- Because volatility peaks in demand and generation MoM indicators, scenario experiments should prioritize demand shock intensity and source-specific output fluctuation (including thermal and renewables).
+- Implement shocks via scenario_parameters.csv (demand_shock_pct, hydro_capacity_factor, carbon_tax_volatility, shock_duration_months) and evaluate unmet demand, supply-demand ratio, renewable share, and adaptation speed over time.
+Current report:
+============================================================
+        Energy Data Consistency Report
+============================================================
+
+Overall status: 4/6 checks passed, 2 warnings
+
+【GENERATION】
+  max_deviation:
+    2.7284841053187847e-12
+  mean_deviation:
+    2.855625006676095e-13
+  mean_deviation_pct:
+    4.888743714974233e-15
+  abnormal_count:
+    0
+  status:
+    PASS
+
+【DEMAND】
+  max_deviation:
+    59232.0
+  mean_deviation:
+    349.8758343888357
+  mean_deviation_pct:
+    5.937817277208305
+  abnormal_count:
+    2
+  status:
+    PASS
+
+【BALANCE】
+  mean:
+    0.8508623568668773
+  min:
+    0.0
+  max:
+    1.2150836831878409
+  normal_range_pct:
+    11.458333333333332
+  severe_imbalance_count:
+    142
+  status:
+    WARN
+
+【TEMPORAL】
+  max_time_gap:
+    31.0
+  gaps_over_month:
+    0
+  completeness_pct:
+    98.96907216494846
+  expected_months:
+    194
+  actual_months:
+    192
+  status:
+    PASS
+
+【SHARES】
+  supply_max_deviation:
+    5.551115123125783e-16
+  demand_max_deviation:
+    4.440892098500626e-16
+  status:
+    PASS
+
+【GROWTH】
+  extreme_growth_column_count:
+    11
+  status:
+    WARN
+  details:
+    - total_demand_yoy: 3
+    - primary_demand_yoy: 9
+    - secondary_demand_yoy: 5
+    - tertiary_demand_yoy: 8
+    - residential_demand_yoy: 13
+    - total_supply_yoy: 1
+    - thermal_supply_yoy: 1
+    - hydro_supply_yoy: 1
+    - nuclear_supply_yoy: 1
+    - wind_supply_yoy: 1
+    - solar_supply_yoy: 11
+
+============================================================
+

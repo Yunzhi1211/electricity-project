@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-1a_crawl_national_demand.py - 国家能源局用电量数据爬取
+1a_crawl_national_demand.py - National Demand Crawler
 
-面向国家能源月度用电公告的半结构化文本爬虫脚本，核心是：
-(1)读取源文件：
-自动识别输入文件中的表头，要求至少包含date, url
-(2)抓网页正文：
-使用 requests 请求网页，再用 BeautifulSoup 提取纯文本内容。
-(3)正则提取当月/累计用电量：
-根据预设关键词如"全社会用电量""第一产业用电量"等，在网页正文中搜索对应数值，并识别单位。若是"万亿"，统一换算成"亿千瓦时"。
-(4)用累计差分补齐月度值：
-先在"X月份 / 当月 / 本月"等上下文附近提取当月数据。
-若网页没有直接给出当月分项数据，则尝试提取"1—X月累计"数据，并用：本月值 = 本月累计值 - 上月累计值的方式反推出当月数据
-(5)输出标准化表格：
-将整理后的结果保存为标准化 CSV，
-字段包括：date, total_demand, primary_demand, secondary_demand, tertiary_demand, residential_demand
+This script crawls monthly electricity demand bulletins and extracts
+structured demand metrics from semi-structured webpage text.
+
+Main workflow:
+1. Read source file and auto-detect header row containing date and url.
+2. Fetch webpage content with requests and parse plain text with BeautifulSoup.
+3. Extract monthly and cumulative values with regex rules.
+4. Backfill monthly values using cumulative differencing when direct monthly
+    values are missing.
+5. Export a normalized CSV with demand fields.
 """
 import re
 import time
@@ -23,19 +20,22 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from pathlib import Path
 
-# 基础配置
+# Base configuration
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "0_raw_data"
-OUTPUT_DIR = BASE_DIR / "cleaned_data"
+OUTPUT_DIR = BASE_DIR / "4_output_anylogic"
+
+YEAR_START = 2010
+YEAR_END = 2025
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 FIELDS = {
-    "total_demand": ["全社会用电量"],
-    "primary_demand": ["第一产业用电量", "第一产业"],
-    "secondary_demand": ["第二产业用电量", "第二产业"],
-    "tertiary_demand": ["第三产业用电量", "第三产业"],
-    "residential_demand": ["城乡居民生活用电量", "城乡居民生活", "居民生活用电量", "城乡居民用电量"]
+    "total_demand": ["\u5168\u793e\u4f1a\u7528\u7535\u91cf"],
+    "primary_demand": ["\u7b2c\u4e00\u4ea7\u4e1a\u7528\u7535\u91cf", "\u7b2c\u4e00\u4ea7\u4e1a"],
+    "secondary_demand": ["\u7b2c\u4e8c\u4ea7\u4e1a\u7528\u7535\u91cf", "\u7b2c\u4e8c\u4ea7\u4e1a"],
+    "tertiary_demand": ["\u7b2c\u4e09\u4ea7\u4e1a\u7528\u7535\u91cf", "\u7b2c\u4e09\u4ea7\u4e1a"],
+    "residential_demand": ["\u57ce\u4e61\u5c45\u6c11\u751f\u6d3b\u7528\u7535\u91cf", "\u57ce\u4e61\u5c45\u6c11\u751f\u6d3b", "\u5c45\u6c11\u751f\u6d3b\u7528\u7535\u91cf", "\u57ce\u4e61\u5c45\u6c11\u7528\u7535\u91cf"]
 }
 
 
@@ -53,7 +53,7 @@ def read_source_file(path):
             header_row = i
             break
     if header_row is None:
-        raise ValueError("没找到表头行（至少需要 date 和 url）")
+        raise ValueError("Header row not found (requires at least date and url)")
 
     df = pd.read_excel(path, header=header_row)
     df.columns = [str(c).strip().lower() for c in df.columns]
@@ -77,12 +77,12 @@ def fetch_text(url):
 
 def normalize_num(x, unit):
     v = float(str(x).replace(",", "").replace("，", ""))
-    return round(v * 10000, 3) if unit == "万亿" else round(v, 3)
+    return round(v * 10000, 3) if unit == "\u4e07\u4ebf" else round(v, 3)
 
 
 def extract_field(text, aliases):
     for alias in aliases:
-        m = re.search(rf"{re.escape(alias)}[^0-9]{{0,8}}([0-9]+(?:\.[0-9]+)?)\s*(万亿|亿)千瓦时", text)
+        m = re.search(rf"{re.escape(alias)}[^0-9]{{0,8}}([0-9]+(?:\.[0-9]+)?)\s*(\u4e07\u4ebf|\u4ebf)\u5343\u74e6\u65f6", text)
         if m:
             return normalize_num(m.group(1), m.group(2))
     return None
@@ -105,26 +105,26 @@ def get_windows(text, prefixes, window=260):
 
 
 def extract_monthly_direct(text, month):
-    # 当月总量 / 当月分项
+    # Extract direct monthly values for total and category fields.
     prefixes = [
-        rf"{month}月份",
-        rf"{month}月",
-        r"当月",
-        r"本月"
+        rf"{month}\u6708\u4efd",
+        rf"{month}\u6708",
+        r"\u5f53\u6708",
+        r"\u672c\u6708"
     ]
     blocks = get_windows(text, prefixes, window=320)
 
     best = {k: None for k in FIELDS}
 
     for b in blocks:
-        # 如果块里明确出现累计，就只拿总量，不轻易拿分项
-        has_cum = bool(re.search(rf"1[-—~至到]{month}月|累计|全年", b))
+        # If the block looks cumulative, avoid taking category values.
+        has_cum = bool(re.search(rf"1[-—~\u81f3\u5230]{month}\u6708|\u7d2f\u8ba1|\u5168\u5e74", b))
 
-        # 总量优先抓
+        # Prefer extracting total demand first.
         if best["total_demand"] is None:
             best["total_demand"] = extract_field(b, FIELDS["total_demand"])
 
-        # 分项只有在明显不是累计块时才抓
+        # Extract category values only in likely non-cumulative blocks.
         if not has_cum:
             for k in ["primary_demand", "secondary_demand", "tertiary_demand", "residential_demand"]:
                 if best[k] is None:
@@ -135,11 +135,11 @@ def extract_monthly_direct(text, month):
 
 def extract_cumulative(text, month):
     prefixes = [
-        rf"1[-—~至到]{month}月累计",
-        rf"1[-—~至到]{month}月",
+        rf"1[-—~\u81f3\u5230]{month}\u6708\u7d2f\u8ba1",
+        rf"1[-—~\u81f3\u5230]{month}\u6708",
     ]
     if month == 12:
-        prefixes += [r"全年", r"1-12月", r"1—12月", r"1至12月"]
+        prefixes += [r"\u5168\u5e74", r"1-12\u6708", r"1—12\u6708", r"1\u81f312\u6708"]
 
     blocks = get_windows(text, prefixes, window=420)
     best = {k: None for k in FIELDS}
@@ -164,10 +164,10 @@ def diff_data(curr, prev):
 
 def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_sec=0.3):
     src = read_source_file(source_file)
-    print("识别到的列名：", src.columns.tolist())
+    print("Detected columns:", src.columns.tolist())
 
     if "type" not in src.columns:
-        src["type"] = "当月"
+        src["type"] = "\u5f53\u6708"
 
     src = src[~src["date"].isna()].copy()
     src["date"] = pd.to_datetime(src["date"], errors="coerce")
@@ -175,7 +175,7 @@ def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_se
     src = src.sort_values("date").reset_index(drop=True)
 
     rows = []
-    cumulative_cache = {}   # 每年累计缓存
+    cumulative_cache = {}   # Yearly cache for cumulative values.
 
     for i, r in src.iterrows():
         date = r["date"]
@@ -192,7 +192,7 @@ def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_se
             "residential_demand": None
         }
 
-        if not url or url.lower() == "nan" or url == "无":
+        if not url or url.lower() == "nan" or url == "\u65e0":
             rows.append(row)
             continue
 
@@ -203,16 +203,16 @@ def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_se
             rows.append(row)
             continue
 
-        # 1) 先抓当月直接值
+        # 1) Try direct monthly extraction first.
         monthly_direct = extract_monthly_direct(text, month)
 
-        # 2) 再抓累计值
+        # 2) Then extract cumulative values.
         cumulative = extract_cumulative(text, month)
 
-        # 3) 先放当月总量
+        # 3) Start with direct monthly total demand.
         row["total_demand"] = monthly_direct["total_demand"]
 
-        # 4) 分项：优先当月直接值；否则用累计差分
+        # 4) For category values, prefer direct monthly values; otherwise use cumulative differencing.
         prev_cum = cumulative_cache.get(year)
 
         monthly_from_cum = diff_data(cumulative, prev_cum) if (prev_cum and cumulative["total_demand"] is not None) else {k: None for k in FIELDS}
@@ -220,11 +220,11 @@ def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_se
         for k in ["primary_demand", "secondary_demand", "tertiary_demand", "residential_demand"]:
             row[k] = monthly_direct[k] if monthly_direct[k] is not None else monthly_from_cum[k]
 
-        # 5) 如果总量当月没抓到，也允许用累计差分补
+        # 5) If direct total is missing, backfill from cumulative differencing.
         if row["total_demand"] is None and monthly_from_cum["total_demand"] is not None:
             row["total_demand"] = monthly_from_cum["total_demand"]
 
-        # 6) 更新累计缓存
+        # 6) Update yearly cumulative cache.
         if cumulative["total_demand"] is not None:
             cumulative_cache[year] = cumulative
 
@@ -240,13 +240,20 @@ def crawl_power_data(source_file, output_csv="power_monthly_clean.csv", sleep_se
         "residential_demand"
     ]]
 
+    # Keep only the AnyLogic modeling window (2010-2025).
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df[df["date"].notna()].copy()
+    df = df[(df["date"].dt.year >= YEAR_START) & (df["date"].dt.year <= YEAR_END)].copy()
+    df = df.sort_values("date").reset_index(drop=True)
+    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+
     df.to_csv(output_csv, index=False, encoding="utf-8-sig")
     print(f"saved -> {output_csv}")
     return df
 
 
 if __name__ == "__main__":
-    # 使用 0_raw_data 中的 URL 文件
+    # Use the URL source file under 0_raw_data.
     source_file = DATA_DIR / "nea_urls_manual.csv.xlsx"
     output_file = OUTPUT_DIR / "demand_crawl.csv"
     
@@ -254,4 +261,4 @@ if __name__ == "__main__":
         df = crawl_power_data(str(source_file), str(output_file))
         print(df.head(20))
     else:
-        print(f"源文件不存在: {source_file}")
+        print(f"Source file not found: {source_file}")
