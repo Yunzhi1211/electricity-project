@@ -481,7 +481,6 @@ class EnergyDataPipeline:
         """Create plain-text documentation for output folders without breaking CSV structure."""
         try:
             check_doc = CHECK_REPORT_DIR / "output_catalog.txt"
-            anylogic_doc = OUTPUT_ANYLOGIC_DIR / "output_catalog.txt"
 
             report_file = CHECK_REPORT_DIR / "validation_report.txt"
             report_excerpt = "Validation report not found."
@@ -545,36 +544,24 @@ class EnergyDataPipeline:
                 "- Because volatility peaks in demand and generation MoM indicators, scenario experiments should prioritize demand shock intensity and source-specific output fluctuation (including thermal and renewables).\n"
                 "- Implement shocks via scenario_parameters.csv (demand_shock_pct, hydro_capacity_factor, carbon_tax_volatility, shock_duration_months) and evaluate unmet demand, supply-demand ratio, renewable share, and adaptation speed over time.\n"
                 "Current report:\n"
+                "============================================================\n"
+                "        Energy Data Consistency Report\n"
+                "============================================================\n"
+                "\n"
                 f"{report_excerpt}\n"
-                "\n",
+                "\n"
+                "============================================================\n"
+                "\n"
+                "Lin, J., Kahrl, F., Liu, X., 2018. A regional analysis of excess capacity in China's power systems. Resources, Conservation and Recycling 129, 93–101. https://doi.org/10.1016/j.resconrec.2017.10.009.\n"
+                "Ming, Z., Ping, Z., Shunkun, Y., Hui, L., 2017. Overall review of the overcapacity situation in China's power systems. Renewable and Sustainable Energy Reviews 76, 768–774. https://doi.org/10.1016/j.rser.2017.03.084.\n"
+                "Lin, B., Liu, C., 2016. Why is electricity consumption inconsistent with economic growth in China? Energy Policy 88, 310–316. https://doi.org/10.1016/j.enpol.2015.10.031.\n"
+                "Chen, H., Yan, H., Gong, K., Yuan, X.-C., 2021. Comprehensive assessment of the impact of temperature on electricity consumption in China. Journal of Cleaner Production 322, 129080. https://doi.org/10.1016/j.jclepro.2021.129080.\n"
+                "Li, C., Shi, H., Cao, Y., Wang, J., Kuang, Y., Tan, Y., Wei, J., 2015. A review of wind curtailment and abandonment in China. Renewable and Sustainable Energy Reviews 41, 1067–1079. https://doi.org/10.1016/j.rser.2014.09.009.\n"
+                "Liu, S., Bie, Z., Lin, J., Wang, X., 2018. Renewable energy integration and grid stability in China. Energy Policy 123, 494–502. https://doi.org/10.1016/j.enpol.2018.09.007.\n",
                 encoding='utf-8'
             )
 
-            anylogic_doc.write_text(
-                "4_output_anylogic usage\n"
-                "\n"
-                "demand_crawl.csv\n"
-                "Purpose: raw monthly demand crawl output before demand imputation.\n"
-                "\n"
-                "demand_filled.xlsx\n"
-                "Purpose: cleaned and imputed demand dataset used as AnyLogic demand input base.\n"
-                "\n"
-                "supply_filled.xlsx\n"
-                "Purpose: cleaned and imputed supply dataset used as AnyLogic supply input base.\n"
-                "\n"
-                "scenario_parameters.csv\n"
-                "Purpose: scenario shock settings for policy and weather experiments in AnyLogic.\n"
-                "Fields:\n"
-                "- demand_shock_pct: exogenous demand increase/decrease\n"
-                "- hydro_capacity_factor: hydropower capacity multiplier\n"
-                "- carbon_tax_base: baseline carbon-tax level\n"
-                "- carbon_tax_volatility: policy shock volatility\n"
-                "- shock_duration_months: shock persistence\n"
-                "- abm_adaptation_speed: agent adjustment speed\n",
-                encoding='utf-8'
-            )
-
-            logger.info("Output documentation files generated")
+            logger.info("Output documentation file generated: 3_output_check_report/output_catalog.txt")
         except Exception as e:
             logger.error(f"Failed to generate output documentation: {str(e)}")
 
