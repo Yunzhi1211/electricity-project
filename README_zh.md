@@ -22,10 +22,18 @@ wholepackage/
 │   ├── 2a_merge_datasets.py
 │   ├── 2b_calculate_indicators.py
 │   └── 2c_validate_consistency.py
-├── 3_output_anylogic/             # AnyLogic 输出文件
+├── 3_output_check_report/         # 验证报告及中间输出文件
+│   ├── 1_merged_energy_data.csv
+│   ├── 2_energy_indicators.csv
+│   ├── 3_1_demand_monthly.csv
+│   ├── 3_2_generation_monthly.csv
+│   ├── 3_3_energy_balance.csv
+│   ├── 4_model_inputs.xlsx
+│   └── output_catalog.txt
+├── 4_output_anylogic/             # AnyLogic 输入文件
 │   ├── demand_crawl.csv
-│   ├── demand_filled.csv
-│   ├── supply_filled.csv
+│   ├── demand_filled.xlsx
+│   ├── supply_filled.xlsx
 │   └── scenario_parameters.csv
 ├── main_pipeline.py               # 完整 Pipeline 主程序
 └── README.md                      # 本文件
@@ -110,45 +118,69 @@ python 2_process_validate/2c_validate_consistency.py
 - 检查数据质量
 - 输出: `2_process_validate/validation_report.txt`
 
-### Stage 3: 生成AnyLogic输入文件
+### Stage 3: 验证报告（`3_output_check_report/`）
 
-#### 3a. 月度用电量文件
+#### 3a. 合并能源数据
 ```
-3_output_anylogic/demand_monthly.csv
+3_output_check_report/1_merged_energy_data.csv
 ```
-- 列: date, total_demand, ...
-- 格式: 1行标题 + N行数据
+- 需求与供给数据合并后的完整数据集
 
-#### 3b. 月度发电量文件 
+#### 3b. 能源指标
 ```
-3_output_anylogic/generation_monthly.csv
+3_output_check_report/2_energy_indicators.csv
+```
+- 同比增长率及衍生指标
+
+#### 3c. 月度用电量
+```
+3_output_check_report/3_1_demand_monthly.csv
+```
+
+#### 3d. 月度发电量
+```
+3_output_check_report/3_2_generation_monthly.csv
 ```
 - 列: date, total_supply, thermal_supply, hydro_supply, nuclear_supply, wind_supply, solar_supply
-- 格式: 1行标题 + 169行数据
 
-#### 3c. 能源平衡表
+#### 3e. 能源平衡表
 ```
-3_output_anylogic/energy_balance.csv
+3_output_check_report/3_3_energy_balance.csv
 ```
-- 列: date, total_supply, thermal_supply, ...
-- 包含供给侧所有数据
 
-#### 3d. 情景参数
+#### 3f. 模型输入文件
 ```
-3_output_anylogic/scenario_parameters.csv
+3_output_check_report/4_model_inputs.xlsx
+```
+- Sheet1: energy_data
+- Sheet2: scenarios
+
+### Stage 4: AnyLogic 输入文件（`4_output_anylogic/`）
+
+#### 4a. 需求爬取数据
+```
+4_output_anylogic/demand_crawl.csv
+```
+
+#### 4b. 需求补值数据
+```
+4_output_anylogic/demand_filled.xlsx
+```
+
+#### 4c. 供给补值数据
+```
+4_output_anylogic/supply_filled.xlsx
+```
+
+#### 4d. 情景参数
+```
+4_output_anylogic/scenario_parameters.csv
 ```
 4个场景:
 - 基准情景 (demand_growth=5%)
 - 高速增长 (demand_growth=8%)
 - 低速增长 (demand_growth=2%)
 - 可再生重点 (renewable_target=70%)
-
-#### 3e. 综合输入文件
-```
-3_output_anylogic/model_inputs.xlsx
-```
-- Sheet1: energy_data (原始数据)
-- Sheet2: scenarios (情景参数)
 
 ## 快速开始
 

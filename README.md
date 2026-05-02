@@ -22,10 +22,18 @@ wholepackage/
 │   ├── 2a_merge_datasets.py
 │   ├── 2b_calculate_indicators.py
 │   └── 2c_validate_consistency.py
-├── 3_output_anylogic/             # AnyLogic output files
+├── 3_output_check_report/         # Validation reports and intermediate outputs
+│   ├── 1_merged_energy_data.csv
+│   ├── 2_energy_indicators.csv
+│   ├── 3_1_demand_monthly.csv
+│   ├── 3_2_generation_monthly.csv
+│   ├── 3_3_energy_balance.csv
+│   ├── 4_model_inputs.xlsx
+│   └── output_catalog.txt
+├── 4_output_anylogic/             # AnyLogic input files
 │   ├── demand_crawl.csv
-│   ├── demand_filled.csv
-│   ├── supply_filled.csv
+│   ├── demand_filled.xlsx
+│   ├── supply_filled.xlsx
 │   └── scenario_parameters.csv
 ├── main_pipeline.py               # Full Pipeline main entry point
 └── README.md                      # This file
@@ -110,45 +118,69 @@ python 2_process_validate/2c_validate_consistency.py
 - Checks data quality.
 - **Output**: `2_process_validate/validation_report.txt`
 
-### Stage 3: Generate AnyLogic Input Files
+### Stage 3: Validation Reports (`3_output_check_report/`)
 
-#### 3a. Monthly Demand File
+#### 3a. Merged Energy Data
 ```
-3_output_anylogic/demand_monthly.csv
+3_output_check_report/1_merged_energy_data.csv
 ```
-- Columns: date, total_demand, etc.
-- Format: 1 header row + N data rows.
+- Merged demand and supply data.
 
-#### 3b. Monthly Generation File 
+#### 3b. Energy Indicators
 ```
-3_output_anylogic/generation_monthly.csv
+3_output_check_report/2_energy_indicators.csv
+```
+- Calculated YoY growth rates and derived indicators.
+
+#### 3c. Monthly Demand
+```
+3_output_check_report/3_1_demand_monthly.csv
+```
+
+#### 3d. Monthly Generation
+```
+3_output_check_report/3_2_generation_monthly.csv
 ```
 - Columns: date, total_supply, thermal_supply, hydro_supply, nuclear_supply, wind_supply, solar_supply.
-- Format: 1 header row + 169 data rows.
 
-#### 3c. Energy Balance Sheet
+#### 3e. Energy Balance
 ```
-3_output_anylogic/energy_balance.csv
+3_output_check_report/3_3_energy_balance.csv
 ```
-- Columns: date, total_supply, thermal_supply, etc.
-- Contains all supply-side data.
 
-#### 3d. Scenario Parameters
+#### 3f. Model Inputs
 ```
-3_output_anylogic/scenario_parameters.csv
+3_output_check_report/4_model_inputs.xlsx
+```
+- **Sheet1**: energy_data
+- **Sheet2**: scenarios
+
+### Stage 4: AnyLogic Input Files (`4_output_anylogic/`)
+
+#### 4a. Demand Crawl
+```
+4_output_anylogic/demand_crawl.csv
+```
+
+#### 4b. Demand Filled
+```
+4_output_anylogic/demand_filled.xlsx
+```
+
+#### 4c. Supply Filled
+```
+4_output_anylogic/supply_filled.xlsx
+```
+
+#### 4d. Scenario Parameters
+```
+4_output_anylogic/scenario_parameters.csv
 ```
 Contains 4 scenarios:
 - **Baseline**: demand_growth = 5%
 - **High Growth**: demand_growth = 8%
 - **Low Growth**: demand_growth = 2%
 - **Renewable Focus**: renewable_target = 70%
-
-#### 3e. Integrated Input File
-```
-3_output_anylogic/model_inputs.xlsx
-```
-- **Sheet1**: energy_data (Raw/processed data)
-- **Sheet2**: scenarios (Scenario parameters)
 
 ## Quick Start
 
