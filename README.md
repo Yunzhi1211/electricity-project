@@ -12,6 +12,17 @@ The Python pipeline cleans raw NBS/NEA data, produces AnyLogic database inputs, 
 
 ---
 
+## Team
+
+| Name | Email |
+|---|---|
+| Yunzhi Jiang | yunzhi.j@foxmail.com |
+| Zhuohan Tian | u3661579@connect.hku.hk |
+| Qiyue Cheng | 13815473040@163.com |
+| Yiye Liu | u3661498@connect.hku.hk |
+
+---
+
 ## Folder Structure
 
 ```
@@ -33,7 +44,7 @@ wholepackage/
 │   ├── demand_filled.xlsx             # 2010-2025 monthly demand (193 rows)
 │   ├── supply_filled.xlsx             # 2010-2025 monthly generation (169 rows)
 │   ├── scenario_parameters.csv        # Two ABM scenarios
-│   ├── forecast_demand.csv            # 5-year demand forecast with 80/95% CI
+│   ├── forecast_demand.csv            # demand point forecast (date, forecast)
 │   ├── forecast_supply.csv            # 5-year supply forecast with 80/95% CI
 │   └── db_update_info.txt             # Row counts; nMonths hint for AnyLogic
 ├── 5_anylogic_model/                  # AnyLogic project
@@ -143,7 +154,7 @@ Script: `2_process_validate/2e_forecast.py`
 
 - Model: SARIMA(1,1,1)(1,1,1)₁₂ fitted on 2010-2025 (up to 180 monthly obs)
 - Output: `4_output_anylogic/forecast_demand.csv` and `forecast_supply.csv`
-  - Columns: `date`, `forecast`, `ci80_lower`, `ci80_upper`, `ci95_lower`, `ci95_upper`
+  - Columns: `date`, `forecast` (point projection for AnyLogic)
 
 **Confidence interval validity**:
 

@@ -9,6 +9,15 @@
 
 本项目实现了一套完整的能源数据获取、清洗、处理和分析的自动化流程，最终为 AnyLogic 建模软件生成输入文件。
 
+## 团队成员
+
+| 姓名 | 邮箱 |
+|---|---|
+| 江昀芷 | yunzhi.j@foxmail.com |
+| 田卓菡 | u3661579@connect.hku.hk |
+| 程祺越 | 13815473040@163.com |
+| 刘弈烨 | u3661498@connect.hku.hk |
+
 ## 项目结构
 
 ```
@@ -265,8 +274,8 @@ pip install pandas numpy openpyxl xlrd scikit-learn
 ## 更新日志
 
 ### 2026-05-02（最新）
-- ✓ 预测周期延长至 10 年（120 个月），`2e_forecast.py` 每年标注置信度等级
-- ✓ 预测置信度评估合并至 `output_catalog.txt`，不再单独生成 `forecast_assessment.txt`
+- ✓ 预测周期延长至 10 年（120 个月）；`2e_forecast.py` 仅输出点预测列供 AnyLogic，`output_catalog.txt` 中附简要文字说明（已不再输出 80/95% 区间列）
+- ✓ 预测说明合并至 `output_catalog.txt`，不再单独生成 `forecast_assessment.txt`
 - ✓ AnyLogic 仿真历史阶段结束后自动切换至预测阶段（共 313 个月）
 - ✓ 新增三张时序图：可再生占比、政府政策、能源平衡
 - ✓ 仿真界面新增运行状态显示（阶段 / 步骤 / 进度百分比）

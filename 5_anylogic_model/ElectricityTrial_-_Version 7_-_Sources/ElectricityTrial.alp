@@ -30,6 +30,9 @@ lastRenewableSubsidyLive = renewableSubsidyLive;
 loadGenerationData();
 loadDemandData();
 loadShockConfig();
+loadForecastTrajectoryData();
+loadProvinceGenerationData();
+loadCalibrationHistoricalObservedPrices();
 
 
 grid.marketPrice = basePrice;
@@ -54,9 +57,12 @@ if (useHistoricalData) {
     traceln("grid.totalDemand = " + grid.totalDemand);
     traceln("grid.totalSupply = " + grid.totalSupply);
     traceln("grid.marketPrice = " + grid.marketPrice);
-} else {
+	} else {
     grid.clearMarket();
 }
+
+policyOptimizationSamplePrice = grid.marketPrice;
+policyOptimizationObjective = Math.abs(grid.marketPrice - policyOptTargetPrice);
 
 marketPriceTrialDS.reset();
 renewableShareTrialDS.reset();
@@ -67,9 +73,16 @@ renewableShareTrialDS.add(time(), (grid.totalSupply > 0)
         : 0.0);
 balanceTrialDS.add(time(), grid.totalSupply - grid.totalDemand);
 
-
+// Historical-only SSE runs for Calibration optimization trials; Simulation/CompareRuns run history then forecast.
+try {
+	com.anylogic.engine.Experiment<?> ex = getExperiment();
+	if (ex != null && ex.getClass().getName().indexOf("Optimization") >= 0) {
+		calibrationFinishAfterHistorical = true;
+	}
+} catch (Throwable ignore) {}
 
 updateDisplayStatus();
+updateProvinceMap();
 ]]></StartupCode>
 			<Generic>false</Generic>
 			<GenericParameter>
@@ -165,7 +178,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773941443288</Id>
 					<Name><![CDATA[currentIndex]]></Name>
-					<X>-830</X><Y>140</Y>
+					<X>-820</X><Y>20</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -180,7 +193,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773941457059</Id>
 					<Name><![CDATA[basePrice]]></Name>
-					<X>-830</X><Y>200</Y>
+					<X>-820</X><Y>80</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -195,7 +208,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773988955350</Id>
 					<Name><![CDATA[useHistoricalData]]></Name>
-					<X>-830</X><Y>280</Y>
+					<X>-820</X><Y>160</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -210,7 +223,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773989161544</Id>
 					<Name><![CDATA[nMonths]]></Name>
-					<X>-830</X><Y>330</Y>
+					<X>-820</X><Y>210</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -225,7 +238,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1777747300101</Id>
 					<Name><![CDATA[forecastMonths]]></Name>
-					<X>-830</X><Y>350</Y>
+					<X>-820</X><Y>230</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -233,14 +246,14 @@ updateDisplayStatus();
 					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
 						<Type><![CDATA[int]]></Type>        
 						<InitialValue Class="CodeValue">
-							<Code><![CDATA[36]]></Code>
+							<Code><![CDATA[120]]></Code>
 						</InitialValue>
 					</Properties>
 				</Variable>
 				<Variable Class="PlainVariable">
 					<Id>1773989233595</Id>
 					<Name><![CDATA[monthList]]></Name>
-					<X>-830</X><Y>440</Y>
+					<X>-820</X><Y>320</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -249,6 +262,126 @@ updateDisplayStatus();
 						<Type><![CDATA[String[]]]></Type>        
 						<InitialValue Class="CodeValue">
 							<Code><![CDATA[new String[nMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000111</Id>
+					<Name><![CDATA[useForecastTrajectory]]></Name>
+					<X>-820</X><Y>350</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[true]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000118</Id>
+					<Name><![CDATA[strictInputDataMode]]></Name>
+					<X>-820</X><Y>365</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[true]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000112</Id>
+					<Name><![CDATA[forecastDemandCsvPath]]></Name>
+					<X>-820</X><Y>380</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA["forecast_demand.csv"]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000113</Id>
+					<Name><![CDATA[forecastSupplyCsvPath]]></Name>
+					<X>-830</X><Y>530</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA["forecast_supply.csv"]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000114</Id>
+					<Name><![CDATA[forecastMonthList]]></Name>
+					<X>-830</X><Y>560</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new String[forecastMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000115</Id>
+					<Name><![CDATA[forecastDemandTrajectory]]></Name>
+					<X>-830</X><Y>590</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new double[forecastMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000116</Id>
+					<Name><![CDATA[forecastSupplyTrajectory]]></Name>
+					<X>-830</X><Y>620</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new double[forecastMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000117</Id>
+					<Name><![CDATA[forecastTrajectoryLength]]></Name>
+					<X>-830</X><Y>650</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[int]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
 						</InitialValue>
 					</Properties>
 				</Variable>
@@ -355,7 +488,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773989384478</Id>
 					<Name><![CDATA[thermalGenData]]></Name>
-					<X>-760</X><Y>640</Y>
+					<X>-800</X><Y>780</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -370,7 +503,7 @@ updateDisplayStatus();
 				<Variable Class="PlainVariable">
 					<Id>1773989452724</Id>
 					<Name><![CDATA[hydroGenData]]></Name>
-					<X>-760</X><Y>690</Y>
+					<X>-780</X><Y>700</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -825,10 +958,505 @@ updateDisplayStatus();
 						</InitialValue>
 					</Properties>
 				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000101</Id>
+					<Name><![CDATA[enableProvinceMap]]></Name>
+					<X>-396</X><Y>1405</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[true]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000102</Id>
+					<Name><![CDATA[provinceMonthlyCsvPath]]></Name>
+					<X>-396</X><Y>1438</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA["province_generation_monthly_2010_2035.csv"]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000103</Id>
+					<Name><![CDATA[provinceDisplayMetric]]></Name>
+					<X>-396</X><Y>1470</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA["total_gen"]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000104</Id>
+					<Name><![CDATA[provinceMonthlyGen]]></Name>
+					<X>-396</X><Y>1502</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.Map<String, java.util.Map<String, double[]>>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.HashMap<String, java.util.Map<String, double[]>>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000105</Id>
+					<Name><![CDATA[provinceCurrentMetricByIso]]></Name>
+					<X>-396</X><Y>1534</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.Map<String, Double>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.HashMap<String, Double>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000106</Id>
+					<Name><![CDATA[missingProvinceDateLog]]></Name>
+					<X>-396</X><Y>1566</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.Set<String>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.HashSet<String>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000107</Id>
+					<Name><![CDATA[provinceIsoByNameCn]]></Name>
+					<X>-396</X><Y>1598</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.Map<String, String>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.HashMap<String, String>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000108</Id>
+					<Name><![CDATA[provinceCurrentDateKey]]></Name>
+					<X>-396</X><Y>1630</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[""]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000109</Id>
+					<Name><![CDATA[provinceMetricMinValue]]></Name>
+					<X>-396</X><Y>1662</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0.0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000110</Id>
+					<Name><![CDATA[provinceMetricMaxValue]]></Name>
+					<X>-396</X><Y>1694</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0.0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000119</Id>
+					<Name><![CDATA[provinceMetricAvgValue]]></Name>
+					<X>-396</X><Y>1726</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0.0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000120</Id>
+					<Name><![CDATA[provinceShapeIndicesByIso]]></Name>
+					<X>-396</X><Y>1758</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.Map<String, java.util.List<Integer>>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.HashMap<String, java.util.List<Integer>>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000121</Id>
+					<Name><![CDATA[provinceAllShapeIndices]]></Name>
+					<X>-396</X><Y>1790</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[java.util.List<Integer>]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new java.util.ArrayList<Integer>()]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000122</Id>
+					<Name><![CDATA[provinceMapShapeCacheReady]]></Name>
+					<X>-396</X><Y>1822</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[false]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000123</Id>
+					<Name><![CDATA[provinceMapControlName]]></Name>
+					<X>-396</X><Y>1854</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA["map"]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000124</Id>
+					<Name><![CDATA[provinceNormalizedKeyBuffer]]></Name>
+					<X>-396</X><Y>1886</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[""]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000125</Id>
+					<Name><![CDATA[provinceMetricValueBuffer]]></Name>
+					<X>-396</X><Y>1918</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[Double.NaN]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000126</Id>
+					<Name><![CDATA[provinceMetricHasValueBuffer]]></Name>
+					<X>-396</X><Y>1950</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[false]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000127</Id>
+					<Name><![CDATA[provinceColorBuffer]]></Name>
+					<X>-396</X><Y>1982</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[int]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0xFFD8D8D8]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000128</Id>
+					<Name><![CDATA[provinceMapShapeBuffer]]></Name>
+					<X>-396</X><Y>2014</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[com.anylogic.engine.presentation.ShapeGISMap]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[null]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1880000000129</Id>
+					<Name><![CDATA[provinceKeyScratch]]></Name>
+					<X>-396</X><Y>2046</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[String]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[""]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971600012</Id>
+					<Name><![CDATA[policyOptimizationObjective]]></Name>
+					<X>-820</X><Y>185</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[1.0e9]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971600013</Id>
+					<Name><![CDATA[policyOptimizationSamplePrice]]></Name>
+					<X>-820</X><Y>400</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700030</Id>
+					<Name><![CDATA[calibrationFinishAfterHistorical]]></Name>
+					<X>-820</X><Y>302</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[false]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700031</Id>
+					<Name><![CDATA[calibrationUseSyntheticScarcityProxy]]></Name>
+					<X>-820</X><Y>-20</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[false]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700040</Id>
+					<Name><![CDATA[calibrationPriceSeriesSSE]]></Name>
+					<X>-820</X><Y>-60</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700041</Id>
+					<Name><![CDATA[calibrationSeriesPairCount]]></Name>
+					<X>-830</X><Y>504</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[int]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700042</Id>
+					<Name><![CDATA[calibrationObservedMonthlyPrice]]></Name>
+					<X>-820</X><Y>480</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new double[nMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971700043</Id>
+					<Name><![CDATA[calibrationPredictedMonthlyPrice]]></Name>
+					<X>-820</X><Y>440</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new double[nMonths]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971800012</Id>
+					<Name><![CDATA[calibrationUseAnnualMeanGrid]]></Name>
+					<X>-820</X><Y>680</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[boolean]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[true]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971800023</Id>
+					<Name><![CDATA[calibrationObsNationalAnnual]]></Name>
+					<X>-830</X><Y>744</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double[]]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[new double[110]]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971800050</Id>
+					<Name><![CDATA[calibrationMonthlyGridSSE]]></Name>
+					<X>-780</X><Y>1060</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777971800051</Id>
+					<Name><![CDATA[calibrationAnnualGridSSE]]></Name>
+					<X>-830</X><Y>1102</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[0]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
 				<Variable Class="Parameter">
 					<Id>1777747100101</Id>
 					<Name><![CDATA[compareCarbonTax]]></Name>
-					<X>-830</X><Y>230</Y>
+					<X>-820</X><Y>110</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -850,7 +1478,7 @@ updateDisplayStatus();
 				<Variable Class="Parameter">
 					<Id>1777747100103</Id>
 					<Name><![CDATA[compareRenewableSubsidy]]></Name>
-					<X>-830</X><Y>255</Y>
+					<X>-820</X><Y>135</Y>
 					<Label><X>19</X><Y>-1</Y></Label>
 					<PublicFlag>false</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -865,6 +1493,116 @@ updateDisplayStatus();
 							<EditorContolType>SLIDER</EditorContolType>
 							<MinSliderValue><![CDATA[0]]></MinSliderValue>
 							<MaxSliderValue><![CDATA[1]]></MaxSliderValue>
+							<DelimeterType>NO_DELIMETER</DelimeterType>
+						</ParameterEditor>
+					</Properties>                 
+				</Variable>
+				<Variable Class="Parameter">
+					<Id>1777971600010</Id>
+					<Name><![CDATA[policyOptTargetPrice]]></Name>
+					<X>-820</X><Y>60</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" ModificatorType="STATIC">
+						<Type><![CDATA[double]]></Type>
+						<UnitType><![CDATA[NONE]]></UnitType>
+						<SdArray>false</SdArray>
+						<ParameterEditor>
+							<Id>1777971600011</Id>
+							<Label><![CDATA[policyOptTargetPrice]]></Label>
+							<EditorContolType>TEXT_BOX</EditorContolType>
+							<MinSliderValue><![CDATA[0]]></MinSliderValue>
+							<MaxSliderValue><![CDATA[2000]]></MaxSliderValue>
+							<DelimeterType>NO_DELIMETER</DelimeterType>
+						</ParameterEditor>
+					</Properties>                 
+				</Variable>
+				<Variable Class="Parameter">
+					<Id>1777971700010</Id>
+					<Name><![CDATA[priceCalibScale]]></Name>
+					<X>-820</X><Y>240</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" ModificatorType="STATIC">
+						<Type><![CDATA[double]]></Type>
+						<UnitType><![CDATA[NONE]]></UnitType>
+						<SdArray>false</SdArray>
+						<ParameterEditor>
+							<Id>1777971700011</Id>
+							<Label><![CDATA[priceCalibScale]]></Label>
+							<EditorContolType>SLIDER</EditorContolType>
+							<MinSliderValue><![CDATA[0.05]]></MinSliderValue>
+							<MaxSliderValue><![CDATA[5]]></MaxSliderValue>
+							<DelimeterType>NO_DELIMETER</DelimeterType>
+						</ParameterEditor>
+					</Properties>                 
+				</Variable>
+				<Variable Class="Parameter">
+					<Id>1777971700020</Id>
+					<Name><![CDATA[calibrationHistoricalPriceCsvPath]]></Name>
+					<X>-820</X><Y>272</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" ModificatorType="STATIC">
+						<Type><![CDATA[String]]></Type>
+						<UnitType><![CDATA[NONE]]></UnitType>
+						<SdArray>false</SdArray>
+						<ParameterEditor>
+							<Id>1777971700021</Id>
+							<Label><![CDATA[calibrationHistoricalPriceCsvPath]]></Label>
+							<EditorContolType>TEXT_BOX</EditorContolType>
+							<MinSliderValue><![CDATA[0]]></MinSliderValue>
+							<MaxSliderValue><![CDATA[100]]></MaxSliderValue>
+							<DelimeterType>NO_DELIMETER</DelimeterType>
+						</ParameterEditor>
+					</Properties>                 
+				</Variable>
+				<Variable Class="Parameter">
+					<Id>1777971800001</Id>
+					<Name><![CDATA[calibrationAnnualWideCsvPath]]></Name>
+					<X>-820</X><Y>840</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" ModificatorType="STATIC">
+						<Type><![CDATA[String]]></Type>
+						<UnitType><![CDATA[NONE]]></UnitType>
+						<SdArray>false</SdArray>
+						<ParameterEditor>
+							<Id>1777971800002</Id>
+							<Label><![CDATA[calibrationAnnualWideCsvPath]]></Label>
+							<EditorContolType>TEXT_BOX</EditorContolType>
+							<MinSliderValue><![CDATA[0]]></MinSliderValue>
+							<MaxSliderValue><![CDATA[100]]></MaxSliderValue>
+							<DelimeterType>NO_DELIMETER</DelimeterType>
+						</ParameterEditor>
+					</Properties>                 
+				</Variable>
+				<Variable Class="Parameter">
+					<Id>1777971800010</Id>
+					<Name><![CDATA[calibrationAnnualYearBase]]></Name>
+					<X>-820</X><Y>880</Y>
+					<Label><X>19</X><Y>-1</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" ModificatorType="STATIC">
+						<Type><![CDATA[int]]></Type>
+						<UnitType><![CDATA[NONE]]></UnitType>
+						<SdArray>false</SdArray>
+						<ParameterEditor>
+							<Id>1777971800011</Id>
+							<Label><![CDATA[calibrationAnnualYearBase]]></Label>
+							<EditorContolType>TEXT_BOX</EditorContolType>
+							<MinSliderValue><![CDATA[0]]></MinSliderValue>
+							<MaxSliderValue><![CDATA[2200]]></MaxSliderValue>
 							<DelimeterType>NO_DELIMETER</DelimeterType>
 						</ParameterEditor>
 					</Properties>                 
@@ -903,6 +1641,13 @@ updateDisplayStatus();
 					</Properties>
 					<Action><![CDATA[if (useHistoricalData) {
 	if (currentIndex >= nMonths - 1) {
+		if (calibrationFinishAfterHistorical) {
+			recomputeCalibrationHistoricalSSE();
+			traceln("Calibration: stop-after-historical. SSE=" + calibrationPriceSeriesSSE
+				+ " pairedMonths=" + calibrationSeriesPairCount);
+			finishSimulation();
+			return;
+		}
 		traceln("Historical data finished at index = " + currentIndex + "; switching to forecast mode");
 		useHistoricalData = false;
 		currentIndex = 0;
@@ -913,7 +1658,15 @@ updateDisplayStatus();
 }
 
 if (!useHistoricalData) {
-	if (currentIndex >= forecastMonths) {
+	if (useForecastTrajectory && strictInputDataMode && forecastTrajectoryLength <= 0) {
+		throw new RuntimeException("Strict mode: forecast trajectory is empty.");
+	}
+	int forecastLimit = forecastMonths;
+	if (useForecastTrajectory && forecastTrajectoryLength > 0) {
+		forecastLimit = Math.min(forecastMonths, forecastTrajectoryLength);
+	}
+
+	if (currentIndex >= forecastLimit) {
 		traceln("Forecast finished after " + currentIndex + " months.");
 		finishSimulation();
 		return;
@@ -928,12 +1681,35 @@ if (!useHistoricalData) {
 		gov.renewablePriority = 1.0 + renewableSubsidyLive;
 	}
 
-	// Demand growth: demandGrowthAdj is an annual multiplier (e.g. 1.05 = +5%/yr)
-	double monthlyGrowth = Math.pow(Math.max(0.5, gov.demandGrowthAdj), 1.0 / 12.0);
-	primaryDem.demand     *= monthlyGrowth;
-	secondaryDem.demand   *= monthlyGrowth;
-	tertiaryDem.demand    *= monthlyGrowth;
-	residentialDem.demand *= monthlyGrowth;
+	int fIdx = Math.max(0, currentIndex - 1);
+	boolean hasTrajectory = useForecastTrajectory && fIdx < forecastTrajectoryLength;
+
+	double baselineDemand;
+	if (hasTrajectory) {
+		baselineDemand = Math.max(0.0, forecastDemandTrajectory[fIdx]);
+	} else {
+		double monthlyGrowth = Math.pow(Math.max(0.5, gov.demandGrowthAdj), 1.0 / 12.0);
+		primaryDem.demand     *= monthlyGrowth;
+		secondaryDem.demand   *= monthlyGrowth;
+		tertiaryDem.demand    *= monthlyGrowth;
+		residentialDem.demand *= monthlyGrowth;
+		baselineDemand = Math.max(0.0,
+			primaryDem.demand + secondaryDem.demand + tertiaryDem.demand + residentialDem.demand);
+	}
+
+	// Distribute baseline demand to sectors using current composition.
+	double sectorTotalBefore = primaryDem.demand + secondaryDem.demand + tertiaryDem.demand + residentialDem.demand;
+	double pW = 0.20, sW = 0.40, tW = 0.20, rW = 0.20;
+	if (sectorTotalBefore > 0) {
+		pW = primaryDem.demand / sectorTotalBefore;
+		sW = secondaryDem.demand / sectorTotalBefore;
+		tW = tertiaryDem.demand / sectorTotalBefore;
+		rW = residentialDem.demand / sectorTotalBefore;
+	}
+	primaryDem.demand     = baselineDemand * pW;
+	secondaryDem.demand   = baselineDemand * sW;
+	tertiaryDem.demand    = baselineDemand * tW;
+	residentialDem.demand = baselineDemand * rW;
 
 	// Stochastic shocks also apply during forecast (ABM resilience testing)
 	sampleShock();
@@ -949,20 +1725,17 @@ if (!useHistoricalData) {
 	secondaryDem.demand   *= demandRandomFactor;
 	tertiaryDem.demand    *= demandRandomFactor;
 	residentialDem.demand *= demandRandomFactor;
-
-	// Total demand (sector sum already includes shock)
 	grid.totalDemand = primaryDem.demand + secondaryDem.demand
 	                 + tertiaryDem.demand + residentialDem.demand;
 
 	// Evolving renewable market shares over forecast horizon (energy transition)
-	// progress: 0 at forecast start -> 1 at forecastMonths end
-	double progress = currentIndex / Math.max(1.0, (double) forecastMonths);
+	double progress = currentIndex / Math.max(1.0, (double) forecastLimit);
 	double rp = Math.max(0.5, Math.min(1.5, gov.renewablePriority));
 	double wShare = Math.min(0.35, 0.20 + progress * 0.08 * rp);  // wind: 20% -> 28%+
 	double sShare = Math.min(0.30, 0.15 + progress * 0.10 * rp);  // solar: 15% -> 25%+
 	double hShare = 0.20 * shockHydroFactor;                        // hydro: 20%, shock-reduced
 	double nShare = Math.min(0.25, 0.20 + progress * 0.02 * rp);  // nuclear: 20% -> 22%+
-	double tShare = Math.max(0.05, 1.0 - wShare - sShare - hShare - nShare); // thermal: 25% -> min 5%
+	double tShare = Math.max(0.05, 1.0 - wShare - sShare - hShare - nShare);
 
 	// Carbon-tax slider suppresses thermal share so impact is visible in charts
 	if (livePolicyEnabled) {
@@ -970,7 +1743,6 @@ if (!useHistoricalData) {
 		tShare = Math.max(0.03, tShare * (1.0 - thermalPenalty));
 	}
 
-	// Normalize shares to ensure they sum to 1
 	double totShare = wShare + sShare + hShare + nShare + tShare;
 	windGen.marketShare    = wShare   / totShare;
 	solarGen.marketShare   = sShare   / totShare;
@@ -978,12 +1750,16 @@ if (!useHistoricalData) {
 	nuclearGen.marketShare = nShare   / totShare;
 	thermalGen.marketShare = tShare   / totShare;
 
-	// Generation from shares
-	windGen.generation    = grid.totalDemand * windGen.marketShare;
-	solarGen.generation   = grid.totalDemand * solarGen.marketShare;
-	hydroGen.generation   = grid.totalDemand * hydroGen.marketShare;
-	nuclearGen.generation = grid.totalDemand * nuclearGen.marketShare;
-	thermalGen.generation = grid.totalDemand * thermalGen.marketShare;
+	// Use external trajectory as national supply anchor; allow scenario deviations.
+	double supplyAnchor = hasTrajectory
+		? Math.max(0.0, forecastSupplyTrajectory[fIdx])
+		: Math.max(0.0, grid.totalDemand);
+
+	windGen.generation    = supplyAnchor * windGen.marketShare;
+	solarGen.generation   = supplyAnchor * solarGen.marketShare;
+	hydroGen.generation   = supplyAnchor * hydroGen.marketShare;
+	nuclearGen.generation = supplyAnchor * nuclearGen.marketShare;
+	thermalGen.generation = supplyAnchor * thermalGen.marketShare;
 
 	thermalGen.generation *= thermalAvailability * supplyRandomFactor;
 	hydroGen.generation   *= supplyRandomFactor;
@@ -994,6 +1770,21 @@ if (!useHistoricalData) {
 	grid.totalSupply = windGen.generation + solarGen.generation + hydroGen.generation
 	                 + nuclearGen.generation + thermalGen.generation;
 
+	// Soft pull keeps the series anchored while preserving policy/shock deviations.
+	if (hasTrajectory) {
+		double pull = 0.35;
+		double target = Math.max(0.0, forecastSupplyTrajectory[fIdx]);
+		double blended = pull * target + (1.0 - pull) * grid.totalSupply;
+		double k = blended / Math.max(grid.totalSupply, 0.0001);
+		thermalGen.generation *= k;
+		hydroGen.generation   *= k;
+		nuclearGen.generation *= k;
+		windGen.generation    *= k;
+		solarGen.generation   *= k;
+		grid.totalSupply = windGen.generation + solarGen.generation + hydroGen.generation
+		                 + nuclearGen.generation + thermalGen.generation;
+	}
+
 	thermalGen.updateBidPrice();
 	hydroGen.updateBidPrice();
 	nuclearGen.updateBidPrice();
@@ -1002,7 +1793,7 @@ if (!useHistoricalData) {
 
 	grid.gap       = grid.totalSupply - grid.totalDemand;
 	grid.tightness = grid.totalDemand / Math.max(grid.totalSupply, 0.0001);
-	grid.marketPrice = basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor;
+	grid.marketPrice = basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor * priceCalibScale;
 	if (grid.marketPrice < 100) grid.marketPrice = 100;
 
 	thermalGen.updateProfit();
@@ -1033,7 +1824,7 @@ if (livePolicyEnabled) {
 
 	grid.gap = grid.totalSupply - grid.totalDemand;
 	grid.tightness = grid.totalDemand / Math.max(grid.totalSupply, 0.0001);
-	grid.marketPrice = Math.max(100, basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor);
+	grid.marketPrice = Math.max(100, basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor * priceCalibScale);
 
 	thermalGen.updateProfit();
 	hydroGen.updateProfit();
@@ -1042,12 +1833,17 @@ if (livePolicyEnabled) {
 	solarGen.updateProfit();
 }
 
+// Scalar for Optimization (OptQuest / Genetic): |marketPrice − target| using the latest simulated month price.
+policyOptimizationSamplePrice = grid.marketPrice;
+policyOptimizationObjective = Math.abs(grid.marketPrice - policyOptTargetPrice);
+
 marketPriceTrialDS.add(time(), grid.marketPrice);
 renewableShareTrialDS.add(time(), (grid.totalSupply > 0)
 		? (hydroGen.generation + nuclearGen.generation + solarGen.generation + windGen.generation) / grid.totalSupply * 100.0
 		: 0.0);
 balanceTrialDS.add(time(), grid.totalSupply - grid.totalDemand);
 
+updateProvinceMap();
 updateDisplayStatus();
 ]]></Action>
 				</Event>
@@ -1141,7 +1937,10 @@ int phaseDone;
 int phaseTotal;
 int phaseRemaining;
 int overallDone;
-int overallTotal = nMonths + forecastMonths;
+int forecastTotalDisplay = (useForecastTrajectory && forecastTrajectoryLength > 0)
+	? Math.min(forecastMonths, forecastTrajectoryLength)
+	: forecastMonths;
+int overallTotal = nMonths + forecastTotalDisplay;
 double overallPct;
 java.util.function.Function<java.time.LocalDate, String> fmtYM = d -> d.getYear() + "." + d.getMonthValue();
 
@@ -1168,16 +1967,26 @@ if (useHistoricalData) {
 	phaseRemaining = Math.max(0, phaseTotal - phaseDone);
 	overallDone = phaseDone;
 } else {
-	java.time.LocalDate forecastBaseMonth;
-	if (lastMonthIndex >= 0) {
-		forecastBaseMonth = java.time.LocalDate.parse(monthList[lastMonthIndex].substring(0, 10)).plusMonths(currentIndex);
-	} else {
-		forecastBaseMonth = java.time.LocalDate.of(2026, 1, 1).plusMonths(Math.max(0, currentIndex - 1));
+	String forecastKey = null;
+	if (useForecastTrajectory && forecastTrajectoryLength > 0 && currentIndex > 0) {
+		int idx = Math.max(0, Math.min(currentIndex - 1, forecastTrajectoryLength - 1));
+		forecastKey = forecastMonthList[idx];
 	}
-	displayMonth = fmtYM.apply(forecastBaseMonth) + " *";
+	if (forecastKey != null && forecastKey.length() >= 10) {
+		java.time.LocalDate forecastMonth = java.time.LocalDate.parse(forecastKey.substring(0, 10));
+		displayMonth = fmtYM.apply(forecastMonth) + " *";
+	} else {
+		java.time.LocalDate forecastBaseMonth;
+		if (lastMonthIndex >= 0) {
+			forecastBaseMonth = java.time.LocalDate.parse(monthList[lastMonthIndex].substring(0, 10)).plusMonths(currentIndex);
+		} else {
+			forecastBaseMonth = java.time.LocalDate.of(2026, 1, 1).plusMonths(Math.max(0, currentIndex - 1));
+		}
+		displayMonth = fmtYM.apply(forecastBaseMonth) + " *";
+	}
 	phaseLabel = "Forecast";
 	phaseDone = currentIndex;
-	phaseTotal = forecastMonths;
+	phaseTotal = forecastTotalDisplay;
 	phaseRemaining = Math.max(0, phaseTotal - phaseDone);
 	overallDone = nMonths + phaseDone;
 }
@@ -1192,13 +2001,12 @@ progressLabel = "Phase = " + phaseLabel
 textMonth.setText("Time = " + displayMonth);
 textPrice.setText("Price = " + String.format("%.2f", grid.marketPrice));
 textStatus.setText(progressLabel);
-textLegend.setText("* forecast period");
 ]]></Body>
 				</Function>
 				<Function AccessType="default" StaticFunction="false">
 					<ReturnModificator>VOID</ReturnModificator>
 					<ReturnType><![CDATA[double]]></ReturnType>
-					<Id>1773988141945</Id>
+					<Id>1773988141946</Id>
 					<Name><![CDATA[loadGenerationData]]></Name>
 					<X>-1120</X><Y>1220</Y>
 					<Label><X>19</X><Y>0</Y></Label>
@@ -1290,6 +2098,130 @@ textLegend.setText("* forecast period");
     }
 
 ]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000210</Id>
+					<Name><![CDATA[loadForecastTrajectoryData]]></Name>
+					<X>-1120</X><Y>1300</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[forecastTrajectoryLength = 0;
+java.util.Arrays.fill(forecastMonthList, null);
+java.util.Arrays.fill(forecastDemandTrajectory, 0.0);
+java.util.Arrays.fill(forecastSupplyTrajectory, 0.0);
+
+if (!useForecastTrajectory) {
+    traceln("Forecast trajectory disabled by flag.");
+    return;
+}
+
+try {
+    java.util.Map<String, Double> demandMap = new java.util.LinkedHashMap<String, Double>();
+    java.util.Map<String, Double> supplyMap = new java.util.LinkedHashMap<String, Double>();
+
+    java.nio.file.Path demandPath = java.nio.file.Paths.get(forecastDemandCsvPath);
+    if (!java.nio.file.Files.exists(demandPath)) {
+        demandPath = java.nio.file.Paths.get(
+            "5_anylogic_model", "ElectricityTrial_-_Version 7_-_Sources", forecastDemandCsvPath
+        );
+    }
+    java.nio.file.Path supplyPath = java.nio.file.Paths.get(forecastSupplyCsvPath);
+    if (!java.nio.file.Files.exists(supplyPath)) {
+        supplyPath = java.nio.file.Paths.get(
+            "5_anylogic_model", "ElectricityTrial_-_Version 7_-_Sources", forecastSupplyCsvPath
+        );
+    }
+    if (!java.nio.file.Files.exists(demandPath) || !java.nio.file.Files.exists(supplyPath)) {
+        String msg = "Forecast CSV missing. demand=" + demandPath + ", supply=" + supplyPath;
+        traceln(msg);
+        if (strictInputDataMode) throw new RuntimeException(msg);
+        return;
+    }
+
+    java.util.List<String> dLines = java.nio.file.Files.readAllLines(
+        demandPath, java.nio.charset.StandardCharsets.UTF_8
+    );
+    java.util.List<String> sLines = java.nio.file.Files.readAllLines(
+        supplyPath, java.nio.charset.StandardCharsets.UTF_8
+    );
+    if (dLines.size() <= 1 || sLines.size() <= 1) {
+        traceln("Forecast CSV has no data rows.");
+        return;
+    }
+
+    String[] dHeader = dLines.get(0).split(",", -1);
+    int dDateCol = -1, dForecastCol = -1;
+    for (int c = 0; c < dHeader.length; c++) {
+        String h = dHeader[c].trim().toLowerCase();
+        if ("date".equals(h)) dDateCol = c;
+        if ("forecast".equals(h)) dForecastCol = c;
+    }
+    if (dDateCol < 0) dDateCol = 0;
+    if (dForecastCol < 0) dForecastCol = Math.min(1, dHeader.length - 1);
+
+    for (int i = 1; i < dLines.size(); i++) {
+        String ln = dLines.get(i);
+        if (ln == null || ln.trim().isEmpty()) continue;
+        String[] a = ln.split(",", -1);
+        if (a.length <= Math.max(dDateCol, dForecastCol)) continue;
+        String dk = a[dDateCol].trim();
+        if (dk.length() >= 10) dk = dk.substring(0, 10);
+        if (dk.isEmpty()) continue;
+        try {
+            demandMap.put(dk, Double.parseDouble(a[dForecastCol].trim()));
+        } catch (Exception ignoreBadDemand) {}
+    }
+
+    String[] sHeader = sLines.get(0).split(",", -1);
+    int sDateCol = -1, sForecastCol = -1;
+    for (int c = 0; c < sHeader.length; c++) {
+        String h = sHeader[c].trim().toLowerCase();
+        if ("date".equals(h)) sDateCol = c;
+        if ("forecast".equals(h)) sForecastCol = c;
+    }
+    if (sDateCol < 0) sDateCol = 0;
+    if (sForecastCol < 0) sForecastCol = Math.min(1, sHeader.length - 1);
+
+    for (int i = 1; i < sLines.size(); i++) {
+        String ln = sLines.get(i);
+        if (ln == null || ln.trim().isEmpty()) continue;
+        String[] a = ln.split(",", -1);
+        if (a.length <= Math.max(sDateCol, sForecastCol)) continue;
+        String dk = a[sDateCol].trim();
+        if (dk.length() >= 10) dk = dk.substring(0, 10);
+        if (dk.isEmpty()) continue;
+        try {
+            supplyMap.put(dk, Double.parseDouble(a[sForecastCol].trim()));
+        } catch (Exception ignoreBadSupply) {}
+    }
+
+    for (java.util.Map.Entry<String, Double> e : demandMap.entrySet()) {
+        String dk = e.getKey();
+        if (!supplyMap.containsKey(dk)) continue;
+        if (forecastTrajectoryLength >= forecastMonths) break;
+        forecastMonthList[forecastTrajectoryLength] = dk;
+        forecastDemandTrajectory[forecastTrajectoryLength] = e.getValue();
+        forecastSupplyTrajectory[forecastTrajectoryLength] = supplyMap.get(dk);
+        forecastTrajectoryLength++;
+    }
+
+    if (forecastTrajectoryLength <= 0) {
+        String msg = "Forecast trajectory loaded 0 overlapping rows.";
+        traceln(msg);
+        if (strictInputDataMode) throw new RuntimeException(msg);
+    } else {
+        traceln("Forecast trajectory loaded rows = " + forecastTrajectoryLength
+            + ", first month = " + forecastMonthList[0]
+            + ", last month = " + forecastMonthList[forecastTrajectoryLength - 1]);
+    }
+} catch (Exception e) {
+    traceln("Error loading forecast trajectory CSV: " + e);
+    e.printStackTrace();
+}]]></Body>
 				</Function>
 				<Function AccessType="default" StaticFunction="false">
 					<ReturnModificator>VOID</ReturnModificator>
@@ -1512,7 +2444,7 @@ solarGen.updateBidPrice();
 grid.gap = grid.totalSupply - grid.totalDemand;
 grid.tightness = grid.totalDemand / Math.max(grid.totalSupply, 0.0001);
 
-grid.marketPrice = basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor;
+grid.marketPrice = basePrice * grid.tightness * gov.priceSensitivity * priceRandomFactor * priceCalibScale;
 if (grid.marketPrice < 100) grid.marketPrice = 100;
 
 // profits
@@ -1521,6 +2453,11 @@ hydroGen.updateProfit();
 nuclearGen.updateProfit();
 windGen.updateProfit();
 solarGen.updateProfit();
+
+if (currentIndex >= 0 && currentIndex < calibrationPredictedMonthlyPrice.length) {
+	calibrationPredictedMonthlyPrice[currentIndex] = grid.marketPrice;
+	recomputeCalibrationHistoricalSSE();
+}
 
 // text
 updateDisplayStatus();
@@ -1623,7 +2560,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 
     grid.gap = grid.totalSupply - grid.totalDemand;
     grid.tightness = grid.totalDemand / Math.max(grid.totalSupply, 0.0001);
-    grid.marketPrice = Math.max(100, basePrice * grid.tightness * gov.priceSensitivity);
+    grid.marketPrice = Math.max(100, basePrice * grid.tightness * gov.priceSensitivity * priceCalibScale);
 
     thermalGen.updateProfit();
     hydroGen.updateProfit();
@@ -1633,6 +2570,841 @@ traceln("<<< applied month = " + monthList[currentIndex]
 
     updateDisplayStatus();
 ]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>RETURNS_VALUE</ReturnModificator>
+					<ReturnType><![CDATA[double]]></ReturnType>
+					<Id>1777971749999</Id>
+					<Name><![CDATA[calibrationMeanMonthlyFieldInCalendarYear]]></Name>
+					<X>-1120</X><Y>1560</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Parameter>
+						<Name><![CDATA[calendarYear]]></Name>
+						<Type><![CDATA[int]]></Type>
+					</Parameter>
+					<Parameter>
+						<Name><![CDATA[perMonthValues]]></Name>
+						<Type><![CDATA[double[]]]></Type>
+					</Parameter>
+					<Body><![CDATA[double sum = 0.0;
+int cnt = 0;
+int upto = Math.min(nMonths,
+    Math.min(monthList.length, perMonthValues.length));
+for (int i = 0; i < upto; i++) {
+	String ml = monthList[i];
+	if (ml == null || ml.length() < 4) continue;
+	int yi;
+	try {
+		yi = Integer.parseInt(ml.substring(0, 4));
+	} catch (Exception ex) {
+		continue;
+	}
+	if (yi != calendarYear) continue;
+	if (Double.isNaN(perMonthValues[i])) continue;
+	sum += perMonthValues[i];
+	cnt++;
+}
+return (cnt > 0 ? (sum / (double) cnt) : Double.NaN);
+
+]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>RETURNS_VALUE</ReturnModificator>
+					<ReturnType><![CDATA[double]]></ReturnType>
+					<Id>1777971750001</Id>
+					<Name><![CDATA[recomputeCalibrationHistoricalSSE]]></Name>
+					<X>-1120</X><Y>1618</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[int slotMax = calibrationObsNationalAnnual.length;
+
+double monthlyDiagSse = 0.0;
+int monthlyDiagPairs = 0;
+int limMonthly = Math.min(nMonths,
+    Math.min(calibrationObservedMonthlyPrice.length, calibrationPredictedMonthlyPrice.length));
+for (int i = 0; i < limMonthly; i++) {
+	if (Double.isNaN(calibrationObservedMonthlyPrice[i])) continue;
+	if (Double.isNaN(calibrationPredictedMonthlyPrice[i])) continue;
+	double d = calibrationPredictedMonthlyPrice[i] - calibrationObservedMonthlyPrice[i];
+	monthlyDiagSse += d * d;
+	monthlyDiagPairs++;
+}
+
+double annualNationalSse = 0.0;
+int annualNationalPairs = 0;
+
+for (int yi = 0; yi < slotMax; yi++) {
+	int Y = calibrationAnnualYearBase + yi;
+	double obsNatYear = calibrationObsNationalAnnual[yi];
+	if (!Double.isNaN(obsNatYear)) {
+		double mn = calibrationMeanMonthlyFieldInCalendarYear(Y, calibrationPredictedMonthlyPrice);
+		if (!Double.isNaN(mn)) {
+			double dn = mn - obsNatYear;
+			annualNationalSse += dn * dn;
+			annualNationalPairs++;
+		}
+	}
+}
+
+calibrationMonthlyGridSSE = (monthlyDiagPairs > 0 ? monthlyDiagSse : 0);
+calibrationAnnualGridSSE = (annualNationalPairs > 0 ? annualNationalSse : 0);
+
+if (calibrationUseAnnualMeanGrid) {
+	calibrationPriceSeriesSSE = calibrationAnnualGridSSE;
+	calibrationSeriesPairCount = annualNationalPairs;
+} else {
+	calibrationPriceSeriesSSE = calibrationMonthlyGridSSE;
+	calibrationSeriesPairCount = monthlyDiagPairs;
+}
+
+return calibrationPriceSeriesSSE;
+]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1777971750002</Id>
+					<Name><![CDATA[loadCalibrationHistoricalObservedPrices]]></Name>
+					<X>-1120</X><Y>1645</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[for (int j = 0; j < calibrationObservedMonthlyPrice.length; j++) {
+	calibrationObservedMonthlyPrice[j] = Double.NaN;
+}
+for (int k = 0; k < calibrationPredictedMonthlyPrice.length; k++) {
+	calibrationPredictedMonthlyPrice[k] = Double.NaN;
+}
+int annSlots = calibrationObsNationalAnnual.length;
+for (int yi = 0; yi < annSlots; yi++) {
+	calibrationObsNationalAnnual[yi] = Double.NaN;
+}
+try {
+	java.nio.file.Path annualPath = java.nio.file.Paths.get(calibrationAnnualWideCsvPath);
+	if (!java.nio.file.Files.exists(annualPath)) {
+		annualPath = java.nio.file.Paths.get(
+			"5_anylogic_model", "ElectricityTrial_-_Version 7_-_Sources",
+			calibrationAnnualWideCsvPath
+		);
+	}
+	if (java.nio.file.Files.exists(annualPath)) {
+		java.util.List<String> alines = java.nio.file.Files.readAllLines(
+				annualPath, java.nio.charset.StandardCharsets.UTF_8);
+		if (alines.size() > 1) {
+			String[] hdrA = alines.get(0).split(",", -1);
+			int colYear = -1;
+			int colNat = -1;
+			for (int c = 0; c < hdrA.length; c++) {
+				String h = hdrA[c].replace("\uFEFF", "").trim().toLowerCase();
+				if ("year".equals(h)) colYear = c;
+				if (h.contains("national_avg")) colNat = c;
+			}
+			if (colYear < 0) colYear = 0;
+			int loadedRows = 0;
+			for (int r = 1; r < alines.size(); r++) {
+				String ln = alines.get(r);
+				if (ln == null || ln.trim().isEmpty()) continue;
+				String[] ta = ln.split(",", -1);
+				if (ta.length <= colYear) continue;
+				String ys = ta[colYear].trim();
+				int Y;
+				try {
+					Y = (int)Math.round(Double.parseDouble(ys.replace(",", ".")));
+				} catch (Exception yrEx) {
+					continue;
+				}
+				int slot = Y - calibrationAnnualYearBase;
+				if (slot < 0 || slot >= annSlots) continue;
+				if (colNat >= 0 && colNat < ta.length) {
+					try {
+						String s = ta[colNat].trim();
+						if (!s.isEmpty()) {
+							calibrationObsNationalAnnual[slot] = Double.parseDouble(s);
+						}
+					} catch (Exception ignoreC) {}
+				}
+				loadedRows++;
+			}
+			traceln("Calibration annual-wide CSV slots=" + annSlots + ", file=" + annualPath + " rowsSeen=" + loadedRows);
+		}
+	}
+} catch (Exception eAnn) {
+	traceln("Calibration annual CSV error: " + eAnn.getMessage());
+}
+
+java.util.LinkedHashMap<String, Double> byDateKey = new java.util.LinkedHashMap<String, Double>();
+try {
+	java.nio.file.Path csvPath = java.nio.file.Paths.get(calibrationHistoricalPriceCsvPath);
+	if (!java.nio.file.Files.exists(csvPath)) {
+		csvPath = java.nio.file.Paths.get(
+			"5_anylogic_model", "ElectricityTrial_-_Version 7_-_Sources",
+			calibrationHistoricalPriceCsvPath
+		);
+	}
+	if (java.nio.file.Files.exists(csvPath)) {
+		java.util.List<String> lines = java.nio.file.Files.readAllLines(
+				csvPath, java.nio.charset.StandardCharsets.UTF_8);
+		if (lines.size() > 1) {
+			String[] hdr = lines.get(0).split(",", -1);
+			int dc = -1, pc = -1;
+			for (int c = 0; c < hdr.length; c++) {
+				String h = hdr[c].trim().toLowerCase();
+				if ("date".equals(h)) dc = c;
+				if ("observed_price".equals(h) || "price".equals(h) || "obs_price".equals(h)) pc = c;
+			}
+			if (dc < 0) dc = 0;
+			if (pc < 0) pc = Math.min(1, hdr.length - 1);
+
+			for (int r = 1; r < lines.size(); r++) {
+				String ln = lines.get(r);
+				if (ln == null || ln.trim().isEmpty()) continue;
+				String[] a = ln.split(",", -1);
+				if (a.length <= Math.max(dc, pc)) continue;
+				String dk = a[dc].trim();
+				if (dk.length() >= 10) dk = dk.substring(0, 10);
+				if (dk.isEmpty()) continue;
+				try {
+					byDateKey.put(dk, Double.parseDouble(a[pc].trim()));
+				} catch (Exception ignoreRow) {}
+			}
+			traceln("Calibration CSV rows loaded keys=" + byDateKey.size() + " file=" + csvPath);
+		}
+	} else {
+		traceln("Calibration CSV not found: " + calibrationHistoricalPriceCsvPath
+			+ " (optional; use calibrationUseSyntheticScarcityProxy)");
+	}
+} catch (Exception e) {
+	traceln("Calibration CSV error: " + e.getMessage());
+}
+
+int matchedCsv = 0;
+for (int i = 0; i < nMonths && i < calibrationObservedMonthlyPrice.length; i++) {
+	String raw = monthList[i];
+	if (raw == null || raw.length() < 10) continue;
+	String dk = raw.substring(0, 10);
+	if (byDateKey.containsKey(dk)) {
+		calibrationObservedMonthlyPrice[i] = byDateKey.get(dk);
+		matchedCsv++;
+	}
+}
+
+boolean calibrationLoadedAnnualNationalAnchor = false;
+for (int ya = 0; ya < annSlots; ya++) {
+	if (!Double.isNaN(calibrationObsNationalAnnual[ya])) {
+		calibrationLoadedAnnualNationalAnchor = true;
+		break;
+	}
+}
+
+if (matchedCsv == 0 && calibrationUseSyntheticScarcityProxy
+		&& !(calibrationUseAnnualMeanGrid && calibrationLoadedAnnualNationalAnchor)) {
+	traceln("Calibration: using scarcity proxy observed series (CSV empty or unmatched).");
+	for (int i = 0; i < nMonths && i < calibrationObservedMonthlyPrice.length; i++) {
+		double sup = Math.max(totalGenData[i], 1e-6);
+		double dem = Math.max(totalDemandData[i], 1e-6);
+		double sc = Math.max(100, Math.min(5000,
+			basePrice * (dem / sup)));
+		calibrationObservedMonthlyPrice[i] = sc;
+	}
+}
+
+recomputeCalibrationHistoricalSSE();
+
+]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000201</Id>
+					<Name><![CDATA[loadProvinceGenerationData]]></Name>
+					<X>-1120</X><Y>1630</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceMonthlyGen.clear();
+provinceCurrentMetricByIso.clear();
+missingProvinceDateLog.clear();
+provinceIsoByNameCn.clear();
+provinceShapeIndicesByIso.clear();
+provinceAllShapeIndices.clear();
+provinceMapShapeCacheReady = false;
+provinceCurrentDateKey = "";
+provinceMetricMinValue = 0.0;
+provinceMetricMaxValue = 0.0;
+provinceMetricAvgValue = 0.0;
+
+if (!enableProvinceMap) {
+    traceln("Province map disabled - skip loading provincial CSV.");
+    return;
+}
+
+try {
+    java.nio.file.Path csvPath = java.nio.file.Paths.get(provinceMonthlyCsvPath);
+    if (!java.nio.file.Files.exists(csvPath)) {
+        csvPath = java.nio.file.Paths.get(
+            "5_anylogic_model", "ElectricityTrial_-_Version 7_-_Sources", provinceMonthlyCsvPath
+        );
+    }
+    if (!java.nio.file.Files.exists(csvPath)) {
+        String msg = "Province CSV not found: " + csvPath;
+        traceln(msg);
+        if (strictInputDataMode) throw new RuntimeException(msg);
+        return;
+    }
+
+    java.util.List<String> lines = java.nio.file.Files.readAllLines(
+        csvPath, java.nio.charset.StandardCharsets.UTF_8
+    );
+    if (lines.size() <= 1) {
+        String msg = "Province CSV has no data rows: " + csvPath;
+        traceln(msg);
+        if (strictInputDataMode) throw new RuntimeException(msg);
+        return;
+    }
+
+    int loadedRows = 0;
+    for (int i = 1; i < lines.size(); i++) {
+        String ln = lines.get(i);
+        if (ln == null || ln.trim().isEmpty()) continue;
+
+        String[] a = ln.split(",", -1);
+        if (a.length < 8) continue;
+
+        String dateKey = a[0].trim();   // yyyy-MM-dd
+        String provinceIso = a[3].trim();
+        String provinceNameCn = a[4].trim();
+        provinceKeyScratch = provinceIso;
+        normalizeProvinceKeyScratch();
+        provinceIso = provinceNormalizedKeyBuffer;
+        if (dateKey.isEmpty() || provinceIso.isEmpty()) continue;
+        if (!provinceNameCn.isEmpty()) {
+            provinceIsoByNameCn.put(provinceNameCn, provinceIso);
+        }
+
+        double totalVal;
+        double thermalVal;
+        double hydroVal;
+        try {
+            totalVal = Double.parseDouble(a[5]);
+            thermalVal = Double.parseDouble(a[6]);
+            hydroVal = Double.parseDouble(a[7]);
+        } catch (Exception ignoreBadNumber) {
+            continue;
+        }
+
+        java.util.Map<String, double[]> byIso = provinceMonthlyGen.get(dateKey);
+        if (byIso == null) {
+            byIso = new java.util.HashMap<String, double[]>();
+            provinceMonthlyGen.put(dateKey, byIso);
+        }
+        byIso.put(provinceIso, new double[]{ totalVal, thermalVal, hydroVal });
+        loadedRows++;
+    }
+
+    if (loadedRows <= 0 || provinceMonthlyGen.isEmpty()) {
+        String msg = "Province monthly CSV parsed but no valid rows: " + csvPath;
+        traceln(msg);
+        if (strictInputDataMode) throw new RuntimeException(msg);
+    } else {
+        traceln("Province monthly data loaded rows = " + loadedRows
+                + ", months = " + provinceMonthlyGen.size());
+    }
+} catch (Exception e) {
+    traceln("Error loading provincial monthly CSV: " + e);
+    e.printStackTrace();
+}]]></Body>
+				</Function>
+				<Function AccessType="default" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000202</Id>
+					<Name><![CDATA[updateProvinceMap]]></Name>
+					<X>-1120</X><Y>1670</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[if (!enableProvinceMap) {
+    applyProvinceMapColoring();
+    return;
+}
+if (provinceMonthlyGen == null || provinceMonthlyGen.isEmpty()) {
+    provinceCurrentMetricByIso.clear();
+    provinceCurrentDateKey = "";
+    provinceMetricMinValue = 0.0;
+    provinceMetricMaxValue = 0.0;
+    provinceMetricAvgValue = 0.0;
+    applyProvinceMapColoring();
+    return;
+}
+
+String dateKey = null;
+if (useHistoricalData) {
+    int safeIndex = Math.max(0, Math.min(currentIndex, nMonths - 1));
+    String rawMonth = monthList[safeIndex];
+    if (rawMonth != null && rawMonth.length() >= 10) {
+        dateKey = rawMonth.substring(0, 10);
+    }
+} else {
+    if (useForecastTrajectory && forecastTrajectoryLength > 0 && currentIndex > 0) {
+        int idx = Math.max(0, Math.min(currentIndex - 1, forecastTrajectoryLength - 1));
+        String fk = forecastMonthList[idx];
+        if (fk != null && fk.length() >= 10) {
+            dateKey = fk.substring(0, 10);
+        }
+    }
+    if (dateKey == null) {
+        int lastMonthIndex = -1;
+        for (int i = nMonths - 1; i >= 0; i--) {
+            if (monthList[i] != null && monthList[i].length() >= 10) {
+                lastMonthIndex = i;
+                break;
+            }
+        }
+        java.time.LocalDate baseDate;
+        if (lastMonthIndex >= 0) {
+            baseDate = java.time.LocalDate.parse(monthList[lastMonthIndex].substring(0, 10)).plusMonths(currentIndex);
+        } else {
+            baseDate = java.time.LocalDate.of(2026, 1, 1).plusMonths(Math.max(0, currentIndex - 1));
+        }
+        dateKey = baseDate.toString();
+    }
+}
+
+if (dateKey == null) {
+    applyProvinceMapColoring();
+    return;
+}
+provinceCurrentDateKey = dateKey;
+
+java.util.Map<String, double[]> byIso = provinceMonthlyGen.get(dateKey);
+if (byIso == null) {
+    provinceCurrentMetricByIso.clear();
+    provinceMetricMinValue = 0.0;
+    provinceMetricMaxValue = 0.0;
+    provinceMetricAvgValue = 0.0;
+    if (!missingProvinceDateLog.contains(dateKey)) {
+        traceln("No provincial monthly data for " + dateKey);
+        missingProvinceDateLog.add(dateKey);
+    }
+    applyProvinceMapColoring();
+    return;
+}
+
+int metricIndex = 0; // total
+if ("thermal_gen".equals(provinceDisplayMetric)) metricIndex = 1;
+else if ("hydro_gen".equals(provinceDisplayMetric)) metricIndex = 2;
+
+provinceCurrentMetricByIso.clear();
+double minV = Double.POSITIVE_INFINITY;
+double maxV = Double.NEGATIVE_INFINITY;
+double sumV = 0.0;
+int cnt = 0;
+for (java.util.Map.Entry<String, double[]> e : byIso.entrySet()) {
+    double[] vals = e.getValue();
+    if (vals == null || vals.length < 3) continue;
+    provinceKeyScratch = e.getKey();
+    normalizeProvinceKeyScratch();
+    String iso = provinceNormalizedKeyBuffer;
+    if (iso.isEmpty()) continue;
+    double val = vals[metricIndex];
+    if (!Double.isFinite(val)) continue;
+    provinceCurrentMetricByIso.put(iso, val);
+    if (val < minV) minV = val;
+    if (val > maxV) maxV = val;
+    sumV += val;
+    cnt++;
+}
+
+if (cnt > 0) {
+    double scaleMin = Double.POSITIVE_INFINITY;
+    double scaleMax = Double.NEGATIVE_INFINITY;
+    for (java.util.Map<String, double[]> monthValues : provinceMonthlyGen.values()) {
+        if (monthValues == null) continue;
+        for (double[] vals : monthValues.values()) {
+            if (vals == null || vals.length < 3) continue;
+            double vv = vals[metricIndex];
+            if (!Double.isFinite(vv)) continue;
+            if (vv < scaleMin) scaleMin = vv;
+            if (vv > scaleMax) scaleMax = vv;
+        }
+    }
+    provinceMetricMinValue = Double.isFinite(scaleMin) ? scaleMin : minV;
+    provinceMetricMaxValue = Double.isFinite(scaleMax) ? scaleMax : maxV;
+    provinceMetricAvgValue = sumV / cnt;
+} else {
+    provinceMetricMinValue = 0.0;
+    provinceMetricMaxValue = 0.0;
+    provinceMetricAvgValue = 0.0;
+}
+applyProvinceMapColoring();
+]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000207</Id>
+					<Name><![CDATA[setProvinceMapMetricTotal]]></Name>
+					<X>-1120</X><Y>1685</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceDisplayMetric = "total_gen";
+updateProvinceMap();
+]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000208</Id>
+					<Name><![CDATA[setProvinceMapMetricThermal]]></Name>
+					<X>-1120</X><Y>1705</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceDisplayMetric = "thermal_gen";
+updateProvinceMap();
+]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000209</Id>
+					<Name><![CDATA[setProvinceMapMetricHydro]]></Name>
+					<X>-1120</X><Y>1725</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceDisplayMetric = "hydro_gen";
+updateProvinceMap();
+]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000203</Id>
+					<Name><![CDATA[normalizeProvinceKeyScratch]]></Name>
+					<X>-1120</X><Y>1760</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceNormalizedKeyBuffer = "";
+if (provinceKeyScratch == null) return;
+
+String s = provinceKeyScratch.trim();
+if (s.isEmpty()) return;
+
+String nameIso = provinceIsoByNameCn.get(s);
+if (nameIso != null && !nameIso.trim().isEmpty()) {
+    provinceNormalizedKeyBuffer = nameIso.trim();
+    return;
+}
+
+s = s.toUpperCase();
+s = s.replace('_', '-').replace('.', '-');
+s = s.replace("CHN-", "CN-");
+s = s.replace("CHN", "CN");
+
+if (s.startsWith("CN-")) {
+    String tail = s.substring(3).replaceAll("[^0-9]", "");
+    if (tail.length() == 1) tail = "0" + tail;
+    if (tail.length() >= 2) {
+        provinceNormalizedKeyBuffer = "CN-" + tail.substring(0, 2);
+        return;
+    }
+}
+
+if (s.startsWith("CN") && s.length() >= 4) {
+    String tail = s.substring(2).replaceAll("[^0-9]", "");
+    if (tail.length() == 1) tail = "0" + tail;
+    if (tail.length() >= 2) {
+        provinceNormalizedKeyBuffer = "CN-" + tail.substring(0, 2);
+        return;
+    }
+}
+
+if (s.matches("^\\d{1,2}$")) {
+    int code = Integer.parseInt(s);
+    provinceNormalizedKeyBuffer = code < 10 ? ("CN-0" + code) : ("CN-" + code);
+    return;
+}
+
+provinceNormalizedKeyBuffer = s;]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>RETURNS_VALUE</ReturnModificator>
+					<ReturnType><![CDATA[int[]]]></ReturnType>
+					<Id>1880000000211</Id>
+					<Name><![CDATA[provinceChoroplethPaletteForCurrentMetric]]></Name>
+					<X>-1120</X><Y>1810</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[if ("thermal_gen".equals(provinceDisplayMetric)) {
+    return new int[] {
+        0xFFFFF7EC, 0xFFFEE8C8, 0xFFFDD49A, 0xFFFDBB84, 0xFFFC8D59,
+        0xFFF16913, 0xFFE6550D, 0xFFD94801, 0xFFCB181D, 0xFFB10026,
+        0xFF980043, 0xFF7F000D, 0xFF6B0000, 0xFF4D0000
+    };
+}
+if ("hydro_gen".equals(provinceDisplayMetric)) {
+    return new int[] {
+        0xFFF7FBFF, 0xFFEAF4FB, 0xFFD6EAF8, 0xFFC1DFF4, 0xFFA9D4F2,
+        0xFF8FC6E8, 0xFF6BAED6, 0xFF4F9BCB, 0xFF3182BD, 0xFF1F6FB2,
+        0xFF08519C, 0xFF08458A, 0xFF083A78, 0xFF08306B
+    };
+}
+return new int[] {
+    0xFFF7FCF5, 0xFFEEF8E9, 0xFFD4EECC, 0xFFBBE4B3, 0xFFA2DA9A,
+    0xFF89CF81, 0xFF6FC569, 0xFF56BA50, 0xFF41AB5D, 0xFF2E9B4C,
+    0xFF1B8A3B, 0xFF0F7A32, 0xFF0A5F28, 0xFF00441B
+};]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000212</Id>
+					<Name><![CDATA[updateProvinceLegendSwatchFills]]></Name>
+					<X>-1120</X><Y>1870</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[try {
+    int[] palette = provinceChoroplethPaletteForCurrentMetric();
+    Object[] shapes = new Object[] {
+        provinceLegendSwatch1, provinceLegendSwatch2, provinceLegendSwatch3, provinceLegendSwatch4,
+        provinceLegendSwatch5, provinceLegendSwatch6, provinceLegendSwatch7, provinceLegendSwatch8,
+        provinceLegendSwatch9, provinceLegendSwatch10, provinceLegendSwatch11, provinceLegendSwatch12,
+        provinceLegendSwatch13, provinceLegendSwatch14
+    };
+    for (int i = 0; i < shapes.length && i < palette.length; i++) {
+        Object sh = shapes[i];
+        if (sh == null) continue;
+        java.awt.Color c = new java.awt.Color(palette[i], true);
+        boolean ok = false;
+        try {
+            java.lang.reflect.Method mColor = sh.getClass().getMethod("setFillColor", java.awt.Color.class);
+            mColor.invoke(sh, c);
+            ok = true;
+        } catch (Exception ignoreColorOverload) {
+        }
+        if (!ok) {
+            try {
+                java.lang.reflect.Method mInt = sh.getClass().getMethod("setFillColor", int.class);
+                mInt.invoke(sh, palette[i]);
+            } catch (Exception ignoreIntOverload) {
+            }
+        }
+    }
+} catch (Throwable ignore) {
+}]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000213</Id>
+					<Name><![CDATA[refreshProvinceMapMetricButtons]]></Name>
+					<X>-1120</X><Y>1910</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[try {
+    btnProvinceMapTotal.setText(
+        "total_gen".equals(provinceDisplayMetric) ? "Total (current)" : "Total");
+    btnProvinceMapThermal.setText(
+        "thermal_gen".equals(provinceDisplayMetric) ? "Thermal (current)" : "Thermal");
+    btnProvinceMapHydro.setText(
+        "hydro_gen".equals(provinceDisplayMetric) ? "Hydro (current)" : "Hydro");
+} catch (Throwable ignore) {
+}]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000205</Id>
+					<Name><![CDATA[computeProvinceMetricValueScratch]]></Name>
+					<X>-1120</X><Y>1790</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceMetricValueBuffer = Double.NaN;
+provinceMetricHasValueBuffer = false;
+if (provinceCurrentMetricByIso == null || provinceCurrentMetricByIso.isEmpty()) return;
+
+normalizeProvinceKeyScratch();
+String k = provinceNormalizedKeyBuffer;
+if (k == null || k.isEmpty()) return;
+
+Double v = provinceCurrentMetricByIso.get(k);
+if (v == null || !Double.isFinite(v)) return;
+
+provinceMetricValueBuffer = v.doubleValue();
+provinceMetricHasValueBuffer = true;]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000206</Id>
+					<Name><![CDATA[computeProvinceColorScratch]]></Name>
+					<X>-1120</X><Y>1830</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceColorBuffer = 0xFFD8D8D8; // default no-data gray
+computeProvinceMetricValueScratch();
+if (!provinceMetricHasValueBuffer) return;
+
+double v = provinceMetricValueBuffer;
+double lo = provinceMetricMinValue;
+double hi = provinceMetricMaxValue;
+int[] palette = provinceChoroplethPaletteForCurrentMetric();
+if (!Double.isFinite(lo) || !Double.isFinite(hi) || hi <= lo) {
+    provinceColorBuffer = palette.length > 0 ? palette[Math.min(7, palette.length - 1)] : 0xFF666666;
+    return;
+}
+
+double t = (v - lo) / (hi - lo);
+if (t < 0) t = 0;
+if (t > 1) t = 1;
+int cls = (int)Math.floor(t * palette.length);
+if (cls < 0) cls = 0;
+if (cls >= palette.length) cls = palette.length - 1;
+provinceColorBuffer = palette[cls];]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000219</Id>
+					<Name><![CDATA[resolveProvinceMapControl]]></Name>
+					<X>-1120</X><Y>1950</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceMapShapeBuffer = null;
+String[] candidates = new String[]{ provinceMapControlName, "map", "gisMap", "provinceMap" };
+Class<?> cls = this.getClass();
+
+for (String nm : candidates) {
+    if (nm == null) continue;
+    String fn = nm.trim();
+    if (fn.isEmpty()) continue;
+    try {
+        java.lang.reflect.Field f;
+        try {
+            f = cls.getField(fn);
+        } catch (Exception ePublic) {
+            f = cls.getDeclaredField(fn);
+            f.setAccessible(true);
+        }
+        Object obj = f.get(this);
+        if (obj instanceof com.anylogic.engine.presentation.ShapeGISMap) {
+            provinceMapShapeBuffer = (com.anylogic.engine.presentation.ShapeGISMap) obj;
+            return;
+        }
+    } catch (Exception ignore) {
+    }
+}]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000220</Id>
+					<Name><![CDATA[ensureProvinceMapShapeIndexCache]]></Name>
+					<X>-1120</X><Y>1990</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[provinceShapeIndicesByIso.clear();
+provinceAllShapeIndices.clear();
+provinceMapShapeCacheReady = false;
+
+resolveProvinceMapControl();
+com.anylogic.engine.presentation.ShapeGISMap mapShape = provinceMapShapeBuffer;
+if (mapShape == null) return;
+com.anylogic.engine.presentation.ShapeGISMap.Layer[] layers = mapShape.getLayers();
+if (layers == null || layers.length == 0) return;
+
+com.anylogic.engine.presentation.ShapeGISMap.Layer layer = layers[0];
+final int[] idx = new int[]{0};
+layer.forAllObjects((g, f) -> {
+    Object isoObj = null;
+    try {
+        isoObj = f.getAttribute("shapeISO");
+    } catch (Exception ignoreAttr) {
+    }
+    provinceKeyScratch = isoObj == null ? "" : String.valueOf(isoObj);
+    normalizeProvinceKeyScratch();
+    String iso = provinceNormalizedKeyBuffer;
+    provinceAllShapeIndices.add(idx[0]);
+    if (!iso.isEmpty()) {
+        java.util.List<Integer> li = provinceShapeIndicesByIso.get(iso);
+        if (li == null) {
+            li = new java.util.ArrayList<Integer>();
+            provinceShapeIndicesByIso.put(iso, li);
+        }
+        li.add(idx[0]);
+    }
+    idx[0]++;
+});
+
+provinceMapShapeCacheReady = !provinceAllShapeIndices.isEmpty();]]></Body>
+				</Function>
+				<Function AccessType="public" StaticFunction="false">
+					<ReturnModificator>VOID</ReturnModificator>
+					<ReturnType><![CDATA[void]]></ReturnType>
+					<Id>1880000000221</Id>
+					<Name><![CDATA[applyProvinceMapColoring]]></Name>
+					<X>-1120</X><Y>2030</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Body><![CDATA[resolveProvinceMapControl();
+updateProvinceLegendSwatchFills();
+refreshProvinceMapMetricButtons();
+com.anylogic.engine.presentation.ShapeGISMap mapShape = provinceMapShapeBuffer;
+if (mapShape == null) return;
+com.anylogic.engine.presentation.ShapeGISMap.Layer[] layers = mapShape.getLayers();
+if (layers == null || layers.length == 0) return;
+
+if (!provinceMapShapeCacheReady || provinceAllShapeIndices.isEmpty()) {
+    ensureProvinceMapShapeIndexCache();
+}
+if (!provinceMapShapeCacheReady || provinceAllShapeIndices.isEmpty()) return;
+
+com.anylogic.engine.presentation.ShapeGISMap.Layer layer = layers[0];
+
+// Reset all provinces to default grey first.
+layer.setFillColor(provinceAllShapeIndices, new java.awt.Color(0xFFD8D8D8, true));
+
+for (java.util.Map.Entry<String, java.util.List<Integer>> e : provinceShapeIndicesByIso.entrySet()) {
+    String iso = e.getKey();
+    java.util.List<Integer> shapeIds = e.getValue();
+    if (shapeIds == null || shapeIds.isEmpty()) continue;
+
+    provinceKeyScratch = iso;
+    computeProvinceColorScratch();
+    if (!provinceMetricHasValueBuffer) continue;
+    layer.setFillColor(shapeIds, new java.awt.Color(provinceColorBuffer, true));
+}]]></Body>
 				</Function>
 			</Functions>
 			<AgentLinks>
@@ -1665,7 +3437,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1060</X><Y>160</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773940686050</PresentationId>
 					<ActiveObjectClass>
@@ -1728,7 +3500,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -1755,7 +3526,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1060</X><Y>220</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773940733474</PresentationId>
 					<ActiveObjectClass>
@@ -1818,7 +3589,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -1845,7 +3615,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1060</X><Y>280</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773940802026</PresentationId>
 					<ActiveObjectClass>
@@ -1908,7 +3678,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -1935,7 +3704,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1060</X><Y>330</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773940856015</PresentationId>
 					<ActiveObjectClass>
@@ -1998,7 +3767,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2025,7 +3793,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1060</X><Y>390</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773940899774</PresentationId>
 					<ActiveObjectClass>
@@ -2088,7 +3856,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2115,7 +3882,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1070</X><Y>550</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941036820</PresentationId>
 					<ActiveObjectClass>
@@ -2142,7 +3909,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2169,7 +3935,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1070</X><Y>600</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941056661</PresentationId>
 					<ActiveObjectClass>
@@ -2196,7 +3962,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2223,7 +3988,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1070</X><Y>660</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941076318</PresentationId>
 					<ActiveObjectClass>
@@ -2250,7 +4015,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2277,7 +4041,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1070</X><Y>720</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941094327</PresentationId>
 					<ActiveObjectClass>
@@ -2304,7 +4068,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2331,7 +4094,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1050</X><Y>960</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941121624</PresentationId>
 					<ActiveObjectClass>
@@ -2352,7 +4115,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialLocationType>XYZ</InitialLocationType>
 					<ColumnCode Class="CodeValue">
 						<Code><![CDATA[0]]></Code>
@@ -2379,7 +4141,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-1050</X><Y>1020</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>false</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>true</ShowLabel>
 					<PresentationId>1773941134287</PresentationId>
 					<ActiveObjectClass>
@@ -2400,7 +4162,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 						<Code><![CDATA[100]]></Code>
 					</Replication>
 					<CollectionType>ARRAY_LIST_BASED</CollectionType>
-					<InEnvironment>true</InEnvironment>
 					<InitialSpeedCode Class="CodeUnitValue">
 						<Code><![CDATA[10]]></Code>
 						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
@@ -2654,7 +4415,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 				<Text>
 					<Id>1774200300001</Id>
 					<Name><![CDATA[textStatus]]></Name>
-					<X>30</X><Y>60</Y>
+					<X>550</X><Y>20</Y>
 					<Label><X>0</X><Y>-10</Y></Label>
 					<PublicFlag>true</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -2675,22 +4436,22 @@ traceln("<<< applied month = " + monthList[currentIndex]
 				</Text>
 				<Text>
 					<Id>1774200300002</Id>
-					<Name><![CDATA[textLegend]]></Name>
-					<X>30</X><Y>100</Y>
+					<Name><![CDATA[forecastDisclaimerText]]></Name>
+					<X>30</X><Y>60</Y>
 					<Label><X>0</X><Y>-10</Y></Label>
 					<PublicFlag>true</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
-					<Z>0</Z>
+					<Z>500</Z>
 					<Rotation>0.0</Rotation>
-					<Color>-12566464</Color>
-					<Text><![CDATA[* forecast period
-]]></Text>
+					<Color>-16777216</Color>
+					<Text><![CDATA[*Forecasts are univariate seasonal SARIMAX point projections used as external national anchors for the simulation; provincial series follow from national totals via share allocation.
+As for validity, this model do not certify predictive accuracy against the future; the forecast is a clearly documented, reproducible baseline whose role is to anchor national scale while structural and policy uncertainty remains explored inside the simulation.]]></Text>
 					<Font>
 						<Name>SansSerif</Name>
-						<Size>20</Size>
+						<Size>16</Size>
 						<Style>2</Style>
 					</Font>
 					<Alignment>LEFT</Alignment>
@@ -2698,7 +4459,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 				<Text>
 					<Id>1773978429273</Id>
 					<Name><![CDATA[textPrice]]></Name>
-					<X>210</X><Y>20</Y>
+					<X>410</X><Y>20</Y>
 					<Label><X>0</X><Y>-10</Y></Label>
 					<PublicFlag>true</PublicFlag>
 					<PresentationFlag>true</PresentationFlag>
@@ -3380,8 +5141,8 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<LineColor>-16777216</LineColor>
 					<LineMaterial>null</LineMaterial>
 					<LineStyle>SOLID</LineStyle>
-					<Width>400</Width>
-					<Height>500</Height>
+					<Width>480</Width>
+					<Height>920</Height>
 					<Rotation>0.0</Rotation>
 					<FillColor>-1</FillColor>
 					<FillMaterial>null</FillMaterial>
@@ -3404,28 +5165,6 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<LineStyle>SOLID</LineStyle>
 					<Width>300</Width>
 					<Height>600</Height>
-					<Rotation>0.0</Rotation>
-					<FillColor>-1</FillColor>
-					<FillMaterial>null</FillMaterial>
-				</Rectangle>
-				<Rectangle>
-					<Id>1774006487173</Id>
-					<Name><![CDATA[rectangle6]]></Name>
-					<X>-870</X><Y>80</Y>
-					<Label><X>10</X><Y>10</Y></Label>
-					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
-					<ShowLabel>false</ShowLabel>
-					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
-					<EmbeddedIcon>false</EmbeddedIcon>
-					<Z>0</Z>
-					<ZHeight>10</ZHeight>
-					<LineWidth>1</LineWidth>
-					<LineColor>-16777216</LineColor>
-					<LineMaterial>null</LineMaterial>
-					<LineStyle>SOLID</LineStyle>
-					<Width>340</Width>
-					<Height>380</Height>
 					<Rotation>0.0</Rotation>
 					<FillColor>-1</FillColor>
 					<FillMaterial>null</FillMaterial>
@@ -3648,126 +5387,144 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<XCode><![CDATA[nGrid.getX()]]></XCode>
 					<YCode><![CDATA[nGrid.getY()]]></YCode>
 </Figure3D>
-				<PointNode>
+				<Oval>
 					<Id>1777732069886</Id>
 					<Name><![CDATA[nThermal]]></Name>
 					<X>400</X><Y>1335</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777732061941</Id>
 					<Name><![CDATA[nWind]]></Name>
 					<X>660</X><Y>1345</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777732064301</Id>
 					<Name><![CDATA[nNuclear]]></Name>
 					<X>740</X><Y>1345</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777732073508</Id>
 					<Name><![CDATA[nGrid]]></Name>
 					<X>570</X><Y>1510</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>40</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>40</RadiusX>
+					<RadiusY>40</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777732067301</Id>
 					<Name><![CDATA[nHydro]]></Name>
 					<X>490</X><Y>1335</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777732059308</Id>
 					<Name><![CDATA[nSolar]]></Name>
 					<X>590</X><Y>1345</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
 				<Light3D>
 					<Id>1777734043220</Id>
 					<Name><![CDATA[light]]></Name>
@@ -3787,86 +5544,98 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<AngleX>45.0</AngleX>
 					<AngleZ>45.0</AngleZ>
 				</Light3D>
-				<PointNode>
+				<Oval>
 					<Id>1777734227773</Id>
 					<Name><![CDATA[nFarm]]></Name>
 					<X>410</X><Y>1685</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777734232565</Id>
 					<Name><![CDATA[nFactory]]></Name>
 					<X>510</X><Y>1685</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777734236421</Id>
 					<Name><![CDATA[nOffice]]></Name>
 					<X>630</X><Y>1695</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
-				<PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
+				<Oval>
 					<Id>1777734239118</Id>
 					<Name><![CDATA[nHouse]]></Name>
 					<X>740</X><Y>1685</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
 					<Z>0</Z>
-					<FakeNode>false</FakeNode>	
-					<Lock>false</Lock>
-					<Color>-14774017</Color>
-					<Radius>10</Radius>
-					<SpeedLimit>false</SpeedLimit>
-					<SpeedLimitValue Class="UnitValue">
-						<Value Class="Double">10</Value>
-						<Unit Class="SpeedUnits"><![CDATA[MPS]]></Unit>
-					</SpeedLimitValue>
-				</PointNode>
+					<ZHeight>0</ZHeight>
+					<LineWidth>0</LineWidth>
+					<LineColor>-14774017</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Circle>false</Circle>
+					<RadiusX>10</RadiusX>
+					<RadiusY>10</RadiusY>
+					<Rotation>0.0</Rotation>
+					<FillColor>16777215</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Oval>
 				<Figure3D>
 					<Id>1777734532447</Id>
 					<Name><![CDATA[objFactory]]></Name>
@@ -4534,7 +6303,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<PresentationFlag>true</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
-					<BasicProperties Width="105.40540540540539" Height="26.713780918727917">
+					<BasicProperties Width="105" Height="26">
                         <EmbeddedIcon>false</EmbeddedIcon>	
 						<Enabled>true</Enabled>
 					</BasicProperties>
@@ -4558,7 +6327,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<PresentationFlag>true</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
-					<BasicProperties Width="105.40540540540539" Height="26.713780918727917">
+					<BasicProperties Width="105" Height="26">
                         <EmbeddedIcon>false</EmbeddedIcon>	
 						<Enabled>true</Enabled>
 					</BasicProperties>
@@ -4787,6 +6556,564 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<FillColor>-1</FillColor>
 					<FillMaterial>null</FillMaterial>
 				</Rectangle>
+				<GISMap>
+					<Id>1777959818037</Id>
+					<Name><![CDATA[map]]></Name>
+					<X>1630</X><Y>130</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Width>950</Width>
+					<Height>810</Height>
+					<GISShapes>
+						<GISShapeFile>
+							<Id>0</Id>
+							<ShapeResourceReference>
+								<PackageName><![CDATA[model]]></PackageName>
+								<ClassName><![CDATA[CHN_ADM1_fixedInternalTopology.shp]]></ClassName>
+							</ShapeResourceReference>
+							<DbfResourceReference>
+								<PackageName><![CDATA[model]]></PackageName>
+								<ClassName><![CDATA[CHN_ADM1_fixedInternalTopology.dbf]]></ClassName>
+							</DbfResourceReference>						
+							<FillColor>-1</FillColor>
+							<LineColor>-16777216</LineColor>
+							<NameColumnIndex>1</NameColumnIndex>
+							<Visible>true</Visible>
+							<Bounds><LonMin>73.4997347</LonMin><LatMin>15.78066</LatMin><LonMax>134.7754563</LonMax><LatMax>53.5608154</LatMax></Bounds>
+						</GISShapeFile>
+					</GISShapes>
+					<Latitude>34.67</Latitude>
+					<Longitude>104.14</Longitude>
+					<Scale>25952218</Scale>
+					<BorderColor>-4144960</BorderColor>
+					<FillColor>-1</FillColor>
+					<ShowTiles>true</ShowTiles>
+					<CustomTileURL>false</CustomTileURL>
+					<TileURL><![CDATA[https://a.tile.openstreetmap.org/[zoom]/[x]/[y].png]]></TileURL>				
+					<RouteProviderType>WEB_SERVICE</RouteProviderType>
+					<RouteNotFound>CREATE_STRAIGHT_LINE</RouteNotFound>
+					<TransportType>CAR</TransportType>
+					<RoutingMethod>FASTEST</RoutingMethod>
+					<PathfindingAlgorithm>DIJKSTRABI</PathfindingAlgorithm>
+					<CustomRouteProvider>false</CustomRouteProvider>
+					<RouteSourceResourceReference>
+					</RouteSourceResourceReference>
+					<RouteGraphResourceReference>
+					</RouteGraphResourceReference>	
+					<MapScaleBasedGeneralization>true</MapScaleBasedGeneralization>
+					<AbsolutePrecisionGeneralization>1000</AbsolutePrecisionGeneralization>
+
+
+				</GISMap>
+				<Control Type="Button">
+				 	<EmbeddedIcon>false</EmbeddedIcon>				
+					<Id>1880000000501</Id>
+					<Name><![CDATA[btnProvinceMapTotal]]></Name>
+					<X>1640</X><Y>950</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<BasicProperties Width="305" Height="38">
+                        <EmbeddedIcon>false</EmbeddedIcon>	
+						<TextColor>-16777216</TextColor>
+						<Enabled>true</Enabled>
+						<ActionCode><![CDATA[setProvinceMapMetricTotal();]]></ActionCode>
+					</BasicProperties>
+					<ExtendedProperties>
+						<Font Name="Dialog" Size="11" Style="0"/>
+						<LabelText><![CDATA[Total]]></LabelText>
+					</ExtendedProperties>
+				</Control>
+				<Control Type="Button">
+				 	<EmbeddedIcon>false</EmbeddedIcon>				
+					<Id>1880000000502</Id>
+					<Name><![CDATA[btnProvinceMapThermal]]></Name>
+					<X>1952</X><Y>950</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<BasicProperties Width="305" Height="38">
+                        <EmbeddedIcon>false</EmbeddedIcon>	
+						<TextColor>-16777216</TextColor>
+						<Enabled>true</Enabled>
+						<ActionCode><![CDATA[setProvinceMapMetricThermal();]]></ActionCode>
+					</BasicProperties>
+					<ExtendedProperties>
+						<Font Name="Dialog" Size="11" Style="0"/>
+						<LabelText><![CDATA[Thermal]]></LabelText>
+					</ExtendedProperties>
+				</Control>
+				<Control Type="Button">
+				 	<EmbeddedIcon>false</EmbeddedIcon>				
+					<Id>1880000000503</Id>
+					<Name><![CDATA[btnProvinceMapHydro]]></Name>
+					<X>2264</X><Y>950</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<BasicProperties Width="305" Height="38">
+                        <EmbeddedIcon>false</EmbeddedIcon>	
+						<TextColor>-16777216</TextColor>
+						<Enabled>true</Enabled>
+						<ActionCode><![CDATA[setProvinceMapMetricHydro();]]></ActionCode>
+					</BasicProperties>
+					<ExtendedProperties>
+						<Font Name="Dialog" Size="11" Style="0"/>
+						<LabelText><![CDATA[Hydro]]></LabelText>
+					</ExtendedProperties>
+				</Control>
+				<Text>
+					<Id>1880000000401</Id>
+					<Name><![CDATA[provinceLegendTitle]]></Name>
+					<X>1640.487</X><Y>996</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-16777216</Color>
+					<Text><![CDATA[Province map legend]]></Text>
+					<TextCode><![CDATA[("total_gen".equals(provinceDisplayMetric) ? "Total" : ("thermal_gen".equals(provinceDisplayMetric) ? "Thermal" : ("hydro_gen".equals(provinceDisplayMetric) ? "Hydro" : provinceDisplayMetric))) + ("thermal_gen".equals(provinceDisplayMetric) ? " (orange ramp)" : ("hydro_gen".equals(provinceDisplayMetric) ? " (blue ramp)" : " (green ramp)")) + " | " + provinceCurrentDateKey + " | 14 classes | global min=" + format(provinceMetricMinValue) + " current avg=" + format(provinceMetricAvgValue) + " global max=" + format(provinceMetricMaxValue)]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Rectangle>
+					<Id>1880000000411</Id>
+					<Name><![CDATA[provinceLegendSwatch1]]></Name>
+					<X>1640.487</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-525313</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000412</Id>
+					<Name><![CDATA[provinceLegendSwatch2]]></Name>
+					<X>1708.883</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-1379077</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000413</Id>
+					<Name><![CDATA[provinceLegendSwatch3]]></Name>
+					<X>1777.278</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-2692360</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000414</Id>
+					<Name><![CDATA[provinceLegendSwatch4]]></Name>
+					<X>1845.674</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-4071436</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000415</Id>
+					<Name><![CDATA[provinceLegendSwatch5]]></Name>
+					<X>1914.07</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-5647118</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000416</Id>
+					<Name><![CDATA[provinceLegendSwatch6]]></Name>
+					<X>1982.465</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-7354648</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000417</Id>
+					<Name><![CDATA[provinceLegendSwatch7]]></Name>
+					<X>2050.861</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-9720106</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000418</Id>
+					<Name><![CDATA[provinceLegendSwatch8]]></Name>
+					<X>2119.257</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-11559989</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000419</Id>
+					<Name><![CDATA[provinceLegendSwatch9]]></Name>
+					<X>2187.652</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-13532483</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000420</Id>
+					<Name><![CDATA[provinceLegendSwatch10]]></Name>
+					<X>2256.048</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-14717006</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000421</Id>
+					<Name><![CDATA[provinceLegendSwatch11]]></Name>
+					<X>2324.444</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-16232036</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000422</Id>
+					<Name><![CDATA[provinceLegendSwatch12]]></Name>
+					<X>2392.839</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-16235126</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000423</Id>
+					<Name><![CDATA[provinceLegendSwatch13]]></Name>
+					<X>2461.235</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-16237960</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Rectangle>
+					<Id>1880000000424</Id>
+					<Name><![CDATA[provinceLegendSwatch14]]></Name>
+					<X>2529.631</X><Y>1026</Y>
+					<Label><X>10</X><Y>10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-3355444</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>68.39567233384854</Width>
+					<Height>18</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-16240533</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Text>
+					<Id>1880000000451</Id>
+					<Name><![CDATA[provinceLegendLowLabel]]></Name>
+					<X>1640.487</X><Y>1052</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Low]]></Text>
+					<TextCode><![CDATA["Low: " + format(provinceMetricMinValue)]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>10</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1880000000452</Id>
+					<Name><![CDATA[provinceLegendMidLabel]]></Name>
+					<X>2012.202</X><Y>1052</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Step]]></Text>
+					<TextCode><![CDATA["Each class ~= " + format((provinceMetricMaxValue - provinceMetricMinValue) / 14.0)]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>10</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1880000000453</Id>
+					<Name><![CDATA[provinceLegendHighLabel]]></Name>
+					<X>2413.655</X><Y>1052</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[High]]></Text>
+					<TextCode><![CDATA["High: " + format(provinceMetricMaxValue)]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>10</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777959939242</Id>
+					<Name><![CDATA[text5]]></Name>
+					<X>1640</X><Y>1076</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-16777216</Color>
+					<Text><![CDATA[Click the Total, Thermal, and Hydro buttons to view provincial total generation, hydro generation, and thermal generation on the map. 
+The map shows monthly provincial generation for total, thermal, or hydro power (use Total / Thermal / Hydro below the map). 
+Historical provincial inputs are annual values from NBS. For each year y and generation type k:
+share(p,k,y) = AnnualProv(p,k,y) / sum_p AnnualProv(p,k,y); Prov(p,k,y,m) = share(p,k,y) * CN(k,y,m). 
+Forecast years extend provincial annual shares by trend, then apply the same monthly allocation rule. ]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>16</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777973725290</Id>
+					<Name><![CDATA[text6]]></Name>
+					<X>190</X><Y>20</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-16777216</Color>
+					<Text><![CDATA[* Forecast period]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>20</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
 			</Presentation>
 
 				</Level>
@@ -4796,7 +7123,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-350</X><Y>40</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4814,7 +7141,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-350</X><Y>100</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4832,7 +7159,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-360</X><Y>160</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4850,7 +7177,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-330</X><Y>240</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4868,7 +7195,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-330</X><Y>300</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4886,7 +7213,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-300</X><Y>20</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4904,7 +7231,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-190</X><Y>80</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4922,7 +7249,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-190</X><Y>140</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4940,7 +7267,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-180</X><Y>200</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4958,7 +7285,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>-180</X><Y>260</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -4976,7 +7303,7 @@ traceln("<<< applied month = " + monthList[currentIndex]
 					<X>60</X><Y>280</Y>
 					<Label><X>10</X><Y>0</Y></Label>
 					<PublicFlag>true</PublicFlag>
-					<PresentationFlag>true</PresentationFlag>
+					<PresentationFlag>false</PresentationFlag>
 					<ShowLabel>false</ShowLabel>
 					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
 					<EmbeddedIcon>false</EmbeddedIcon>
@@ -6148,8 +8475,8 @@ if (marketPrice < 100) marketPrice = 100;
 	<InspectionWindowColorTheme>DEFAULT</InspectionWindowColorTheme>
 	<Frame>
 		<Id>1773937537506</Id>
-		<Width>1700</Width>
-		<Height>1230</Height>
+		<Width>2610</Width>
+		<Height>1260</Height>
 	</Frame>
 	<Database>
 		<Id>1773937537505</Id>
@@ -6171,7 +8498,7 @@ if (marketPrice < 100) marketPrice = 100;
 				<DatabaseName><![CDATA[]]></DatabaseName>
 				<ResourceReference>
 					<PackageName><![CDATA[model]]></PackageName>
-					<ClassName><![CDATA[D:/一个文件夹/学习/学习/hku/sem2/MSDA7102/project/建模数据/1_generation_data.xlsx]]></ClassName>
+					<ClassName><![CDATA[1_generation_data.xlsx]]></ClassName>
 				</ResourceReference>
 				<Host><![CDATA[localhost]]></Host>
 				<JdbcDriverClassName><![CDATA[net.sourceforge.jtds.jdbc.Driver]]></JdbcDriverClassName>
@@ -6192,7 +8519,7 @@ if (marketPrice < 100) marketPrice = 100;
 				<DatabaseName><![CDATA[]]></DatabaseName>
 				<ResourceReference>
 					<PackageName><![CDATA[model]]></PackageName>
-					<ClassName><![CDATA[D:/一个文件夹/学习/学习/hku/sem2/MSDA7102/project/建模数据/2_demand_data.xlsx]]></ClassName>
+					<ClassName><![CDATA[demand_filled.xlsx]]></ClassName>
 				</ResourceReference>
 				<Host><![CDATA[localhost]]></Host>
 				<JdbcDriverClassName><![CDATA[net.sourceforge.jtds.jdbc.Driver]]></JdbcDriverClassName>
@@ -6347,6 +8674,21 @@ if (marketPrice < 100) marketPrice = 100;
 				<Parameter>
 					<ParameterName><![CDATA[compareRenewableSubsidy]]></ParameterName>
 				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[policyOptTargetPrice]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[priceCalibScale]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationHistoricalPriceCsvPath]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationAnnualWideCsvPath]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationAnnualYearBase]]></ParameterName>
+				</Parameter>
 			</Parameters>
 			<PresentationProperties>
 				<EnableZoomAndPanning>false</EnableZoomAndPanning>
@@ -6364,7 +8706,1097 @@ if (marketPrice < 100) marketPrice = 100;
 				<FinalTime><![CDATA[400.0]]></FinalTime>
 			</ModelTimeProperties>
 			<BypassInitialScreen>true</BypassInitialScreen>
-		</SimulationExperiment>	
+		</SimulationExperiment>
+		<!--   =========  Optimization Experiment   ========  -->
+		<OptimizationExperiment ActiveObjectClassId="1773937537508">
+			<Id>1777985949406</Id>
+			<Name><![CDATA[Optimization]]></Name>
+			<CommandLineArguments><![CDATA[]]></CommandLineArguments>
+			<MaximumMemory>2048</MaximumMemory>
+			<RandomNumberGenerationType>fixedSeed</RandomNumberGenerationType>
+			<CustomGeneratorCode>new Random()</CustomGeneratorCode>
+			<BeforeEachExperimentRunCode><![CDATA[datasetCurrentObjective.reset();
+datasetBestInfeasibleObjective.reset();
+datasetBestFeasibleObjective.reset();
+]]></BeforeEachExperimentRunCode>
+			<SeedValue>1</SeedValue>
+			<SelectionModeForSimultaneousEvents>LIFO</SelectionModeForSimultaneousEvents>
+			<VmArgs><![CDATA[]]></VmArgs>
+			<LoadRootFromSnapshot>false</LoadRootFromSnapshot>
+			<Variables>
+				<Variable Class="PlainVariable">
+					<Id>1777988601352</Id>
+					<Name><![CDATA[bestInfeasibleObjective]]></Name>
+					<X>-350</X><Y>120</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[Double.POSITIVE_INFINITY]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
+			</Variables>
+			<AnalysisData>
+    			<DataSet>
+					<Id>1777988601349</Id>
+					<Name><![CDATA[datasetCurrentObjective]]></Name>
+					<X>-350</X><Y>50</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>false</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<AutoUpdate>true</AutoUpdate>
+					<RecurrenceProperties>
+						<Id>1777988601348</Id>
+						<OccurrenceAtTime>true</OccurrenceAtTime>
+						<OccurrenceDate>1778054400000</OccurrenceDate>
+						<OccurrenceTime Class="CodeUnitValue">
+							<Code><![CDATA[0]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</OccurrenceTime>
+						<RecurrenceCode Class="CodeUnitValue">
+							<Code><![CDATA[1]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</RecurrenceCode>
+					</RecurrenceProperties>
+					<FreezeXAxis>true</FreezeXAxis>
+					<VerticalAxisExpression><![CDATA[getCurrentObjectiveValue()]]></VerticalAxisExpression>
+					<SamplesToKeep>500</SamplesToKeep>
+				</DataSet>
+    			<DataSet>
+					<Id>1777988601351</Id>
+					<Name><![CDATA[datasetBestInfeasibleObjective]]></Name>
+					<X>-350</X><Y>100</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>false</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<AutoUpdate>false</AutoUpdate>
+					<RecurrenceProperties>
+						<Id>1777988601350</Id>
+						<OccurrenceAtTime>true</OccurrenceAtTime>
+						<OccurrenceDate>1778054400000</OccurrenceDate>
+						<OccurrenceTime Class="CodeUnitValue">
+							<Code><![CDATA[0]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</OccurrenceTime>
+						<RecurrenceCode Class="CodeUnitValue">
+							<Code><![CDATA[1]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</RecurrenceCode>
+					</RecurrenceProperties>
+					<FreezeXAxis>true</FreezeXAxis>
+					<VerticalAxisExpression><![CDATA[bestInfeasibleObjective]]></VerticalAxisExpression>
+					<SamplesToKeep>500</SamplesToKeep>
+				</DataSet>
+    			<DataSet>
+					<Id>1777988601355</Id>
+					<Name><![CDATA[datasetBestFeasibleObjective]]></Name>
+					<X>-350</X><Y>150</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>false</PresentationFlag>
+					<ShowLabel>true</ShowLabel>
+					<AutoUpdate>false</AutoUpdate>
+					<RecurrenceProperties>
+						<Id>1777988601354</Id>
+						<OccurrenceAtTime>true</OccurrenceAtTime>
+						<OccurrenceDate>1778054400000</OccurrenceDate>
+						<OccurrenceTime Class="CodeUnitValue">
+							<Code><![CDATA[0]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</OccurrenceTime>
+						<RecurrenceCode Class="CodeUnitValue">
+							<Code><![CDATA[1]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+						</RecurrenceCode>
+					</RecurrenceProperties>
+					<FreezeXAxis>true</FreezeXAxis>
+					<VerticalAxisExpression><![CDATA[getBestObjectiveValue()]]></VerticalAxisExpression>
+					<SamplesToKeep>500</SamplesToKeep>
+				</DataSet>
+			</AnalysisData>
+
+			<Presentation>
+				<Text>
+					<Id>1777988601301</Id>
+					<Name><![CDATA[text]]></Name>
+					<X>41.384</X><Y>30</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[Optimization]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>24</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601362</Id>
+					<Name><![CDATA[optimizationPurposeBlurb]]></Name>
+					<X>40</X><Y>65</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Purpose: minimize calibrationPriceSeriesSSE vs. bundled historical price CSVs — tune carbon tax, renewable subsidy & priceCalibScale. 
+Chart: gray dots = each trial objective; blue = rolling minimum SSE among feasible trials.]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>16</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601302</Id>
+					<Name><![CDATA[text1]]></Name>
+					<X>529.902</X><Y>110</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Current]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601303</Id>
+					<Name><![CDATA[text2]]></Name>
+					<X>749.263</X><Y>110</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Best]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Line>
+					<Id>1777988601304</Id>
+					<Name><![CDATA[line]]></Name>
+					<X>42.434</X><Y>130</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>2</LineWidth>
+					<LineColor>-12566464</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<BeginArrowSize>1</BeginArrowSize>
+					<BeginArrowStyle>0</BeginArrowStyle>
+					<EndArrowSize>1</EndArrowSize>
+					<EndArrowStyle>0</EndArrowStyle>
+					<Dx>754</Dx>
+					<Dy>0</Dy>
+					<Dz>0</Dz>
+				</Line>
+				<Text>
+					<Id>1777988601305</Id>
+					<Name><![CDATA[text3]]></Name>
+					<X>66.808</X><Y>140</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12171190</Color>
+					<Text><![CDATA[Iterations completed:]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601306</Id>
+					<Name><![CDATA[text4]]></Name>
+					<X>529.902</X><Y>140</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getNumberOfCompletedIterations() )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601307</Id>
+					<Name><![CDATA[text5]]></Name>
+					<X>529.902</X><Y>149</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0 && !isCurrentSolutionFeasible()]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-65536</Color>
+					<Text><![CDATA[infeasible]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>10</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601308</Id>
+					<Name><![CDATA[text6]]></Name>
+					<X>749.263</X><Y>140</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format(getBestIteration())]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601309</Id>
+					<Name><![CDATA[text7]]></Name>
+					<X>749.263</X><Y>149</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0 && !isBestSolutionFeasible()]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-65536</Color>
+					<Text><![CDATA[infeasible]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>10</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Rectangle>
+					<Id>1777988601310</Id>
+					<Name><![CDATA[rectangle]]></Name>
+					<X>42.434</X><Y>160</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor/>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>755.5751192726618</Width>
+					<Height>30</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-657931</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Text>
+					<Id>1777988601311</Id>
+					<Name><![CDATA[text8]]></Name>
+					<X>66.808</X><Y>170</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12171190</Color>
+					<Text><![CDATA[Objective:]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601312</Id>
+					<Name><![CDATA[text9]]></Name>
+					<X>529.902</X><Y>170</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format(getCurrentObjectiveValue())]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601313</Id>
+					<Name><![CDATA[text10]]></Name>
+					<X>749.263</X><Y>170</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format(getBestObjectiveValue())]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Line>
+					<Id>1777988601314</Id>
+					<Name><![CDATA[line1]]></Name>
+					<X>225.235</X><Y>170</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>2</LineWidth>
+					<LineColor>-12566464</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<BeginArrowSize>1</BeginArrowSize>
+					<BeginArrowStyle>0</BeginArrowStyle>
+					<EndArrowSize>1</EndArrowSize>
+					<EndArrowStyle>0</EndArrowStyle>
+					<Dx>0</Dx>
+					<Dy>15</Dy>
+					<Dz>0</Dz>
+				</Line>
+				<Polyline>
+					<Id>1777988601315</Id>
+					<Name><![CDATA[polyline]]></Name>
+					<X>213.049</X><Y>180</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>2</LineWidth>
+					<LineColor>-12566464</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<BeginArrowSize>1</BeginArrowSize>
+					<BeginArrowStyle>0</BeginArrowStyle>
+					<EndArrowSize>1</EndArrowSize>
+					<EndArrowStyle>0</EndArrowStyle>
+					<FillColor/>
+					<FillMaterial>null</FillMaterial>
+					<Points>
+					   <Point><X>0</X><Y>0</Y><Z>0</Z></Point>
+					   <Point><X>12.186</X><Y>5</Y><Z>0</Z></Point>
+					   <Point><X>24.374</X><Y>0</Y><Z>0</Z></Point>
+					</Points>
+					<Closed>false</Closed>
+				</Polyline>
+				<Text>
+					<Id>1777988601316</Id>
+					<Name><![CDATA[text11]]></Name>
+					<X>66.808</X><Y>210</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Parameters]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Line>
+					<Id>1777988601318</Id>
+					<Name><![CDATA[line2]]></Name>
+					<X>42.434</X><Y>230</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>2</LineWidth>
+					<LineColor>-12566464</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<BeginArrowSize>1</BeginArrowSize>
+					<BeginArrowStyle>0</BeginArrowStyle>
+					<EndArrowSize>1</EndArrowSize>
+					<EndArrowStyle>0</EndArrowStyle>
+					<Dx>754</Dx>
+					<Dy>0</Dy>
+					<Dz>0</Dz>
+				</Line>
+				<Text>
+					<Id>1777988601319</Id>
+					<Name><![CDATA[text12]]></Name>
+					<X>66.808</X><Y>240</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[compareCarbonTax]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601320</Id>
+					<Name><![CDATA[text13]]></Name>
+					<X>529.902</X><Y>240</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getCurrentParamValue( _oqvar_compareCarbonTax ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601321</Id>
+					<Name><![CDATA[text14]]></Name>
+					<X>749.263</X><Y>240</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getBestParamValue( _oqvar_compareCarbonTax ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Rectangle>
+					<Id>1777988601322</Id>
+					<Name><![CDATA[rectangle1]]></Name>
+					<X>42.434</X><Y>260</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor/>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>755.5751192726618</Width>
+					<Height>30</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-657931</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Text>
+					<Id>1777988601323</Id>
+					<Name><![CDATA[text15]]></Name>
+					<X>66.808</X><Y>270</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[compareRenewableSubsidy]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601324</Id>
+					<Name><![CDATA[text16]]></Name>
+					<X>529.902</X><Y>270</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getCurrentParamValue( _oqvar_compareRenewableSubsidy ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601325</Id>
+					<Name><![CDATA[text17]]></Name>
+					<X>749.263</X><Y>270</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getBestParamValue( _oqvar_compareRenewableSubsidy ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601326</Id>
+					<Name><![CDATA[text18]]></Name>
+					<X>66.808</X><Y>300</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12171190</Color>
+					<Text><![CDATA[policyOptTargetPrice]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601327</Id>
+					<Name><![CDATA[text19]]></Name>
+					<X>529.902</X><Y>300</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( policyOptTargetPrice )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601328</Id>
+					<Name><![CDATA[text20]]></Name>
+					<X>749.263</X><Y>300</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( policyOptTargetPrice )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Rectangle>
+					<Id>1777988601329</Id>
+					<Name><![CDATA[rectangle2]]></Name>
+					<X>42.434</X><Y>320</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor/>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<Width>755.5751192726618</Width>
+					<Height>30</Height>
+					<Rotation>0.0</Rotation>
+					<FillColor>-657931</FillColor>
+					<FillMaterial>null</FillMaterial>
+				</Rectangle>
+				<Text>
+					<Id>1777988601330</Id>
+					<Name><![CDATA[text21]]></Name>
+					<X>66.808</X><Y>330</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[priceCalibScale]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601331</Id>
+					<Name><![CDATA[text22]]></Name>
+					<X>529.902</X><Y>330</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getCurrentIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getCurrentParamValue( _oqvar_priceCalibScale ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777988601332</Id>
+					<Name><![CDATA[text23]]></Name>
+					<X>749.263</X><Y>330</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<VisibleCode><![CDATA[getBestIteration() > 0]]></VisibleCode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12490271</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( getBestParamValue( _oqvar_priceCalibScale ) )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>1</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Control Type="Button">
+				 	<EmbeddedIcon>false</EmbeddedIcon>				
+					<Id>1777988601317</Id>
+					<Name><![CDATA[button]]></Name>
+					<X>566.462</X><Y>205</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<BasicProperties Width="218" Height="20">
+                        <EmbeddedIcon>false</EmbeddedIcon>	
+						<TextColor>-16777216</TextColor>
+						<Enabled>true</Enabled>
+						<EnableExpression><![CDATA[getBestIteration() > 0]]></EnableExpression>
+						<ActionCode><![CDATA[String s = "";
+s += "compareCarbonTax\t" + format( getBestParamValue( _oqvar_compareCarbonTax ) ) + "\n";
+s += "compareRenewableSubsidy\t" + format( getBestParamValue( _oqvar_compareRenewableSubsidy ) ) + "\n";
+s += "policyOptTargetPrice\t" + format( policyOptTargetPrice ) + "\n";
+s += "priceCalibScale\t" + format( getBestParamValue( _oqvar_priceCalibScale ) ) + "\n";
+
+copyToClipboard( s );]]></ActionCode>
+					</BasicProperties>
+					<ExtendedProperties>
+						<Font Name="Dialog" Size="11" Style="0"/>
+						<LabelText><![CDATA[Copy best]]></LabelText>
+					</ExtendedProperties>
+				</Control>
+				<Line>
+					<Id>1777988601347</Id>
+					<Name><![CDATA[line3]]></Name>
+					<X>400</X><Y>100</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<ZHeight>10</ZHeight>
+					<LineWidth>1</LineWidth>
+					<LineColor>-4144960</LineColor>
+					<LineMaterial>null</LineMaterial>
+					<LineStyle>SOLID</LineStyle>
+					<BeginArrowSize>1</BeginArrowSize>
+					<BeginArrowStyle>0</BeginArrowStyle>
+					<EndArrowSize>1</EndArrowSize>
+					<EndArrowStyle>0</EndArrowStyle>
+					<Dx>0</Dx>
+					<Dy>250</Dy>
+					<Dz>0</Dz>
+				</Line>
+    			<Plot>
+					<Id>1777988601357</Id>
+					<Name><![CDATA[plot]]></Name>
+					<X>850</X><Y>100</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<AutoUpdate>false</AutoUpdate>
+					<RecurrenceProperties>
+						<Id>1777988601356</Id>
+						<OccurrenceAtTime>true</OccurrenceAtTime>
+						<OccurrenceDate>1778054400000</OccurrenceDate>
+						<OccurrenceTime Class="CodeUnitValue">
+							<Code><![CDATA[0]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[MONTH]]></Unit>
+						</OccurrenceTime>
+						<RecurrenceCode Class="CodeUnitValue">
+							<Code><![CDATA[1]]></Code>
+							<Unit Class="TimeUnits"><![CDATA[MONTH]]></Unit>
+						</RecurrenceCode>
+					</RecurrenceProperties>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Width>490</Width>
+					<Height>300</Height>
+					<BackgroundColor/>
+					<BorderColor/>
+					<ChartArea>
+						<XOffset>80</XOffset>
+						<YOffset>20</YOffset>
+						<Width>390</Width>
+						<Height>200</Height>
+						<BackgroundColor>-1</BackgroundColor>
+						<BorderColor>-9868951</BorderColor>
+						<GridColor>-12566464</GridColor>
+					</ChartArea>
+					<Legend>
+						<Place>SOUTH</Place>
+						<TextColor>-16777216</TextColor>
+						<Size>40</Size>
+					</Legend>
+					<Labels>
+						<HorLabelsPosition>DEFAULT</HorLabelsPosition>
+						<VerLabelsPosition>DEFAULT</VerLabelsPosition>
+						<TextColor>-12566464</TextColor>
+					</Labels>
+					<ShowLegend>true</ShowLegend>
+					<VerScaleFromExpression><![CDATA[0]]></VerScaleFromExpression>
+					<VerScaleToExpression><![CDATA[1]]></VerScaleToExpression>
+					<VerScaleType>AUTO</VerScaleType>
+					<DrawLine>true</DrawLine>
+					<Interpolation>LINEAR</Interpolation>
+					<DatasetExpression>  
+						<Title><![CDATA[Objective — this trial]]></Title>
+					<Id>1777988601359</Id>
+					<Expression><![CDATA[datasetCurrentObjective]]></Expression>
+					<Color>-4144960</Color>
+					<Expression2Flag>false</Expression2Flag>
+						<PointStyle>CIRCLE</PointStyle>
+						<LineWidth>0.0</LineWidth>
+						<HorizontalAxisExpression><![CDATA[]]></HorizontalAxisExpression>
+					</DatasetExpression>
+					<DatasetExpression>  
+						<Title><![CDATA[Feasible — rolling min calibration SSE]]></Title>
+					<Id>1777988601361</Id>
+					<Expression><![CDATA[datasetBestFeasibleObjective]]></Expression>
+					<Color>-16777088</Color>
+					<Expression2Flag>false</Expression2Flag>
+						<PointStyle>NONE</PointStyle>
+						<LineWidth>2.0</LineWidth>
+						<HorizontalAxisExpression><![CDATA[]]></HorizontalAxisExpression>
+					</DatasetExpression>
+					<SamplesToKeep>100</SamplesToKeep>
+					<HorScaleFromExpression><![CDATA[0]]></HorScaleFromExpression>
+					<HorScaleToExpression><![CDATA[1]]></HorScaleToExpression>
+					<HorScaleType>AUTO</HorScaleType>
+    			</Plot>
+				<Text>
+					<Id>1777990129110</Id>
+					<Name><![CDATA[optimizationPurposeBlurb1]]></Name>
+					<X>50</X><Y>410</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12566464</Color>
+					<Text><![CDATA[Iterations completed (best) — The iteration where the best (lowest SSE) solution was recorded.
+Objective (best) — Smallest calibration SSE found: mismatch between simulated prices and observed price data used in the objective.
+compareCarbonTax (best) — Best carbon tax setting used in that run (affects thermal costs and hence prices).
+compareRenewableSubsidy (best) — Best renewable subsidy boost used in that run (affects renewable bids and clearing prices).
+policyOptTargetPrice (best) — Policy reference price in the model; stays fixed if not optimized.
+priceCalibScale (best) — Best overall price-level scale so simulated prices align with history.]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>16</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+			</Presentation>
+
+			<Parameter>	
+				<Id>1777747100101</Id>
+				<Type>CONTINUOUS</Type>
+				<Min Class="CodeValue">
+					<Code><![CDATA[0]]></Code>
+				</Min>
+				<Max Class="CodeValue">
+					<Code><![CDATA[300]]></Code>
+				</Max>
+			</Parameter>
+			<Parameter>	
+				<Id>1777747100103</Id>
+				<Type>CONTINUOUS</Type>
+				<Min Class="CodeValue">
+					<Code><![CDATA[0]]></Code>
+				</Min>
+				<Max Class="CodeValue">
+					<Code><![CDATA[1]]></Code>
+				</Max>
+			</Parameter>
+			<Parameter>	
+				<Id>1777971600010</Id>
+				<Type>FIXED</Type>
+				<Value Class="CodeValue">
+					<Code><![CDATA[376.28]]></Code>
+				</Value>
+			</Parameter>
+			<Parameter>	
+				<Id>1777971700010</Id>
+				<Type>CONTINUOUS</Type>
+				<Min Class="CodeValue">
+					<Code><![CDATA[0.05]]></Code>
+				</Min>
+				<Max Class="CodeValue">
+					<Code><![CDATA[5]]></Code>
+				</Max>
+			</Parameter>
+			<Parameter>	
+				<Id>1777971700020</Id>
+				<Type>FIXED</Type>
+				<Value Class="CodeValue">
+					<Code><![CDATA["calibration_observed_price.csv"]]></Code>
+				</Value>
+			</Parameter>
+			<Parameter>	
+				<Id>1777971800001</Id>
+				<Type>FIXED</Type>
+				<Value Class="CodeValue">
+					<Code><![CDATA["calibration_observed_annual.csv"]]></Code>
+				</Value>
+			</Parameter>
+			<Parameter>	
+				<Id>1777971800010</Id>
+				<Type>FIXED</Type>
+				<Value Class="CodeValue">
+					<Code><![CDATA[1990]]></Code>
+				</Value>
+			</Parameter>
+			<ObjectiveFunctionCode><![CDATA[root.calibrationPriceSeriesSSE]]></ObjectiveFunctionCode>
+			<Objective>MINIMIZE</Objective>  
+			<OptimizationEngine>NATIVE</OptimizationEngine>
+			<AfterIterationCode><![CDATA[if (isBestSolutionFeasible()) {
+	datasetBestFeasibleObjective.update();
+}
+if (!isCurrentSolutionFeasible()) {
+	bestInfeasibleObjective = min( bestInfeasibleObjective, getCurrentObjectiveValue() );
+}
+if (bestInfeasibleObjective != Double.POSITIVE_INFINITY) {
+	datasetBestInfeasibleObjective.update();
+}
+]]></AfterIterationCode>
+			<AllowParallelEvaluations>true</AllowParallelEvaluations>
+			<ReplicationsProperties>
+				<UseReplication>false</UseReplication>
+				<FixedReplicationsNumber>true</FixedReplicationsNumber>
+				<ReplicationPerIteration>10</ReplicationPerIteration>
+				<MinimumReplication>2</MinimumReplication>
+				<MaximumReplication>10</MaximumReplication>
+				<ConfidenceLevel>LEVEL_80</ConfidenceLevel>
+				<ErrorPercent>0.5</ErrorPercent>
+			</ReplicationsProperties>
+			<PresentationProperties>
+				<EnableZoomAndPanning>true</EnableZoomAndPanning>
+				<Title><![CDATA[ElectricityTrial : Optimization]]></Title>	
+				<EnableDeveloperPanel>true</EnableDeveloperPanel>
+				<ShowDeveloperPanelOnStart>false</ShowDeveloperPanelOnStart>
+			</PresentationProperties>
+			<ModelTimeProperties>
+				<StopOption><![CDATA[Stop at specified time]]></StopOption>
+				<InitialDate><![CDATA[1262304000000]]></InitialDate>	
+				<InitialTime><![CDATA[0.0]]></InitialTime>	
+				<FinalDate><![CDATA[1776556800000]]></FinalDate>	
+				<FinalTime><![CDATA[400.0]]></FinalTime>	
+				<StopAfterIterationCount>true</StopAfterIterationCount>
+				<IterationCount>500</IterationCount>
+				<AutomaticStop>false</AutomaticStop>
+			</ModelTimeProperties>
+		</OptimizationExperiment>	
 		<!--   =========   Compare Runs Experiment   ========  -->
 		<CompareRunsExperiment ActiveObjectClassId="1773937537508">
 			<Id>1777752872879</Id>
@@ -6373,7 +9805,7 @@ if (marketPrice < 100) marketPrice = 100;
 			<MaximumMemory>512</MaximumMemory>
 			<RandomNumberGenerationType>fixedSeed</RandomNumberGenerationType>
 			<CustomGeneratorCode>new Random()</CustomGeneratorCode>
-			<AfterSimulationRunCode><![CDATA[parametersOfRuns.add( new Object[] { compareCarbonTax, compareRenewableSubsidy } );
+			<AfterSimulationRunCode><![CDATA[parametersOfRuns.add( new Object[] { compareCarbonTax, compareRenewableSubsidy, policyOptTargetPrice } );
 int numberOfRuns = getEngine().getRunCount();
 Color color = spectrumColor( (numberOfRuns * 4) % 21, 21 );
 while ( chart0.getCount() >= parametersOfRuns.size() ) {
@@ -6418,6 +9850,21 @@ chart2.addDataSet( root.balanceTrialDS, "Run " + numberOfRuns, color, true, Char
 						<Type><![CDATA[double]]></Type>        
 					</Properties>
 				</Variable>
+				<Variable Class="PlainVariable">
+					<Id>1777752872887</Id>
+					<Name><![CDATA[policyOptTargetPrice]]></Name>
+					<X>-350</X><Y>290</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>false</PublicFlag>
+					<PresentationFlag>false</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<Properties SaveInSnapshot="true" Constant="false" AccessType="public" StaticVariable="false">
+						<Type><![CDATA[double]]></Type>        
+						<InitialValue Class="CodeValue">
+							<Code><![CDATA[376.28]]></Code>
+						</InitialValue>
+					</Properties>
+				</Variable>
 				<Variable Class="CollectionVariable">
 					<Id>1777752872903</Id>
 					<Name><![CDATA[parametersOfRuns]]></Name>
@@ -6458,6 +9905,9 @@ Object[] values = parametersOfRuns.get( runNumber );
 
 edit_compareCarbonTax.setValue( (Double) values[0], true );
 edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
+if ( values.length >= 3 ) {
+	edit_policyOptTargetPrice.setValue( (Double) values[2], true );
+}
 ]]></Body>
 				</Function>
 			</Functions>
@@ -6698,7 +10148,7 @@ edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
 					<LineMaterial>null</LineMaterial>
 					<LineStyle>SOLID</LineStyle>
 					<Width>210</Width>
-					<Height>80</Height>
+					<Height>130</Height>
 					<Rotation>0.0</Rotation>
 					<FillColor>-657931</FillColor>
 					<FillMaterial>null</FillMaterial>
@@ -6809,6 +10259,73 @@ edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
 						<Orientation>HORIZONTAL</Orientation>
 						<MinValue><![CDATA[0]]></MinValue>
 						<MaxValue><![CDATA[1]]></MaxValue>
+						<LinkTo>false</LinkTo>
+					</ExtendedProperties>
+				</Control>
+				<Text>
+					<Id>1777752872918</Id>
+					<Name><![CDATA[text_policyTarget]]></Name>
+					<X>50</X><Y>295</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12171190</Color>
+					<Text><![CDATA[policyOptTargetPrice (target grid price)]]></Text>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>LEFT</Alignment>
+				</Text>
+				<Text>
+					<Id>1777752872919</Id>
+					<Name><![CDATA[text_policyTargetVal]]></Name>
+					<X>240</X><Y>295</Y>
+					<Label><X>10</X><Y>0</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<EmbeddedIcon>false</EmbeddedIcon>
+					<Z>0</Z>
+					<Rotation>0.0</Rotation>
+					<Color>-12042869</Color>
+					<Text><![CDATA[?]]></Text>
+					<TextCode><![CDATA[format( policyOptTargetPrice )]]></TextCode>
+					<Font>
+						<Name>SansSerif</Name>
+						<Size>12</Size>
+						<Style>0</Style>
+					</Font>
+					<Alignment>RIGHT</Alignment>
+				</Text>
+				<Control Type="Slider">
+				 	<EmbeddedIcon>false</EmbeddedIcon>				
+					<Id>1777752872920</Id>
+					<Name><![CDATA[edit_policyOptTargetPrice]]></Name>
+					<X>50</X><Y>315</Y>
+					<Label><X>0</X><Y>-10</Y></Label>
+					<PublicFlag>true</PublicFlag>
+					<PresentationFlag>true</PresentationFlag>
+					<ShowLabel>false</ShowLabel>
+					<DrawMode>SHAPE_DRAW_2D3D</DrawMode>
+					<BasicProperties Width="190" Height="30">
+                        <EmbeddedIcon>false</EmbeddedIcon>	
+						<Enabled>true</Enabled>
+						<EnableExpression><![CDATA[getState() == IDLE]]></EnableExpression>
+						<ActionCode><![CDATA[policyOptTargetPrice = value;]]></ActionCode>
+					</BasicProperties>
+					<ExtendedProperties>
+						<DefaultValueCode><![CDATA[policyOptTargetPrice]]></DefaultValueCode>
+						<Orientation>HORIZONTAL</Orientation>
+						<MinValue><![CDATA[50]]></MinValue>
+						<MaxValue><![CDATA[1200]]></MaxValue>
 						<LinkTo>false</LinkTo>
 					</ExtendedProperties>
 				</Control>
@@ -7088,6 +10605,24 @@ edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
 						<Code><![CDATA[compareRenewableSubsidy]]></Code>
 					</ParameterValue>
 				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[policyOptTargetPrice]]></ParameterName>
+					<ParameterValue Class="CodeValue">
+						<Code><![CDATA[policyOptTargetPrice]]></Code>
+					</ParameterValue>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[priceCalibScale]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationHistoricalPriceCsvPath]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationAnnualWideCsvPath]]></ParameterName>
+				</Parameter>
+				<Parameter>
+					<ParameterName><![CDATA[calibrationAnnualYearBase]]></ParameterName>
+				</Parameter>
 			</Parameters>			
 			<PresentationProperties>
 				<EnableZoomAndPanning>true</EnableZoomAndPanning>
@@ -7107,13 +10642,31 @@ edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
 	<ModelResources>
 		<Resource>
 			<Id>1773993917319</Id>
-			<Path><![CDATA[D:/一个文件夹/学习/学习/hku/sem2/MSDA7102/project/建模数据/1_generation_data.xlsx]]></Path>
+			<Path><![CDATA[1_generation_data.xlsx]]></Path>
 			<ReferencedFromUserCode>true</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>
 		<Resource>
 			<Id>1773993948764</Id>
-			<Path><![CDATA[D:/一个文件夹/学习/学习/hku/sem2/MSDA7102/project/建模数据/2_demand_data.xlsx]]></Path>
+			<Path><![CDATA[demand_filled.xlsx]]></Path>
+			<ReferencedFromUserCode>true</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1880000000301</Id>
+			<Path><![CDATA[forecast_demand.csv]]></Path>
+			<ReferencedFromUserCode>true</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1880000000302</Id>
+			<Path><![CDATA[forecast_supply.csv]]></Path>
+			<ReferencedFromUserCode>true</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1880000000303</Id>
+			<Path><![CDATA[province_generation_monthly_2010_2035.csv]]></Path>
 			<ReferencedFromUserCode>true</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>
@@ -7174,6 +10727,24 @@ edit_compareRenewableSubsidy.setValue( (Double) values[1], true );
 		<Resource>
 			<Id>1777735348297</Id>
 			<Path><![CDATA[3d/panel_2.dae]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1777904616902</Id>
+			<Path><![CDATA[CHN_ADM1_fixedInternalTopology.shx]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1777959874201</Id>
+			<Path><![CDATA[CHN_ADM1_fixedInternalTopology.shp]]></Path>
+			<ReferencedFromUserCode>false</ReferencedFromUserCode>
+			<Location>FILE_SYSTEM</Location>
+		</Resource>
+		<Resource>
+			<Id>1777959875706</Id>
+			<Path><![CDATA[CHN_ADM1_fixedInternalTopology.dbf]]></Path>
 			<ReferencedFromUserCode>false</ReferencedFromUserCode>
 			<Location>FILE_SYSTEM</Location>
 		</Resource>

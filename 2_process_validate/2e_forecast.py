@@ -6,34 +6,27 @@ SARIMA-based demand and supply forecast using 2010-2025 historical data.
 
 Forecast horizon: configurable (default 120 months = 10 years).
 Outputs:
-  - 4_output_anylogic/forecast_demand.csv  (future demand with 80/95% CI)
-  - 4_output_anylogic/forecast_supply.csv  (future total supply with 80/95% CI)
+  - 4_output_anylogic/forecast_demand.csv  (date + point forecast only)
+  - 4_output_anylogic/forecast_supply.csv  (same)
   - 4_output_anylogic/forecast_combined.xlsx  (multi-sheet)
-  - 3_output_check_report/output_catalog.txt  (forecast assessment appended)
+  - 3_output_check_report/output_catalog.txt  (qualitative forecast note appended)
 
-Credibility decreases with forecast horizon:
-  - Years 1-3: HIGH confidence — seasonal + trend patterns well-captured
-  - Years 4-5: MODERATE confidence — CI still meaningful for planning
-  - Years 6-10: LOW confidence — treat as scenario range; CIs widen significantly
-  - 50-year: NOT statistically valid; CI would span ±100s% of the mean.
-    The SARIMA model cannot capture structural breaks, technology shifts,
-    or policy changes at that horizon. DO NOT use for decision-making.
+The AnyLogic model reads only the ``forecast`` column. Interval bands are omitted
+deliberately; uncertainty is documented qualitatively in ``write_assessment``.
 """
 
 import warnings
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-# statsmodels is required; falls back to simple linear+seasonal if not present.
 try:
     from statsmodels.tsa.statespace.sarimax import SARIMAX
-    from statsmodels.tsa.stattools import adfuller
-    HAS_STATSMODELS = True
-except ImportError:
-    HAS_STATSMODELS = False
-    warnings.warn("statsmodels not installed — using fallback linear+seasonal model.")
+except ImportError as exc:
+    raise ImportError(
+        "statsmodels is required for 2e_forecast.py. "
+        "Install with: pip install statsmodels"
+    ) from exc
 
 warnings.filterwarnings("ignore")
 
@@ -45,7 +38,7 @@ REPORT_DIR = BASE_DIR / "3_output_check_report"
 DEMAND_FILE = AL_DIR / "demand_filled.xlsx"
 SUPPLY_FILE = AL_DIR / "supply_filled.xlsx"
 
-FORECAST_MONTHS = 120  # 10 years; credibility decreases with horizon (see assessment)
+FORECAST_MONTHS = 120  # 10 years
 
 # Best-guess SARIMA orders; AIC search kept simple to avoid long runtime.
 # (p,d,q)(P,D,Q,s) with s=12 for monthly seasonality.
@@ -54,12 +47,8 @@ SARIMA_SEASONAL_ORDER = (1, 1, 1, 12)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
-def _last_date(series: pd.Series) -> pd.Timestamp:
-    return pd.to_datetime(series.iloc[-1])
-
-
 def sarima_forecast(ts: pd.Series, steps: int, label: str) -> pd.DataFrame:
-    """Fit SARIMA and return forecast DataFrame with CI columns."""
+    """Fit SARIMA and return a single-column point forecast."""
     ts = ts.dropna()
     print(f"  [{label}] fitting SARIMA{SARIMA_ORDER}x{SARIMA_SEASONAL_ORDER} "
           f"on {len(ts)} obs …")
@@ -76,136 +65,64 @@ def sarima_forecast(ts: pd.Series, steps: int, label: str) -> pd.DataFrame:
 
     fc = fit.get_forecast(steps=steps)
     mean = fc.predicted_mean
-    ci80 = fc.conf_int(alpha=0.20)   # 80% CI
-    ci95 = fc.conf_int(alpha=0.05)   # 95% CI
 
     future_index = pd.date_range(
         start=ts.index[-1] + pd.offsets.MonthBegin(1),
         periods=steps,
         freq="MS",
     )
-    result = pd.DataFrame(
-        {
-            "forecast": mean.values,
-            "ci80_lower": ci80.iloc[:, 0].values,
-            "ci80_upper": ci80.iloc[:, 1].values,
-            "ci95_lower": ci95.iloc[:, 0].values,
-            "ci95_upper": ci95.iloc[:, 1].values,
-        },
-        index=future_index,
-    )
+    result = pd.DataFrame({"forecast": mean.values}, index=future_index)
     result.index.name = "date"
     print(f"  [{label}] AIC={fit.aic:.1f}  first 5-yr mean={result['forecast'].mean():.1f}")
     return result
 
 
-def fallback_forecast(ts: pd.Series, steps: int) -> pd.DataFrame:
-    """Simple linear trend + seasonal pattern when statsmodels is unavailable."""
-    ts = ts.dropna()
-    x = np.arange(len(ts))
-    coeffs = np.polyfit(x, ts.values, 1)  # linear trend
-
-    # seasonal factors from last 24 months average by month-of-year
-    ts_monthly = ts.copy()
-    ts_monthly.index = pd.to_datetime(ts_monthly.index)
-    seasonal = (
-        ts_monthly.groupby(ts_monthly.index.month)
-        .mean()
-        / ts_monthly.mean()
-    )
-
-    future_index = pd.date_range(
-        start=ts_monthly.index[-1] + pd.offsets.MonthBegin(1),
-        periods=steps,
-        freq="MS",
-    )
-    forecasts, std_dev = [], float(ts.std())
-    for i, dt in enumerate(future_index):
-        trend_val = np.polyval(coeffs, len(ts) + i)
-        sf = seasonal.get(dt.month, 1.0)
-        forecasts.append(trend_val * sf)
-
-    forecasts = np.array(forecasts)
-    result = pd.DataFrame(
-        {
-            "forecast": forecasts,
-            "ci80_lower": forecasts - 1.28 * std_dev,
-            "ci80_upper": forecasts + 1.28 * std_dev,
-            "ci95_lower": forecasts - 1.96 * std_dev,
-            "ci95_upper": forecasts + 1.96 * std_dev,
-        },
-        index=future_index,
-    )
-    result.index.name = "date"
-    return result
-
-
 def write_assessment(demand_fc: pd.DataFrame, supply_fc: pd.DataFrame) -> None:
-    """Append forecast assessment into the shared output catalog report."""
-    # Compute per-year credibility: measure 95% CI half-width relative to forecast mean
-    fc_years = []
-    for yr in range(1, FORECAST_MONTHS // 12 + 1):
-        start = (yr - 1) * 12
-        end   = yr * 12
-        hw = ((demand_fc['ci95_upper'].iloc[start:end] - demand_fc['ci95_lower'].iloc[start:end]) / 2).mean()
-        mn = demand_fc['forecast'].iloc[start:end].mean()
-        rel = hw / mn * 100 if mn > 0 else 0
-        if rel < 15:
-            credibility = "HIGH"
-        elif rel < 30:
-            credibility = "MODERATE"
-        elif rel < 60:
-            credibility = "LOW"
-        else:
-            credibility = "VERY LOW — treat as scenario range"
-        fc_years.append(f"  Year {yr:2d}: CI half-width={hw:.0f}  ({rel:.0f}% of mean)  → {credibility}")
+    """Append a qualitative forecast note (no predictive intervals in CSV outputs)."""
+    d = demand_fc["forecast"].to_numpy(dtype=float)
+    mn1 = float(d[:12].mean()) if len(d) >= 12 else float(d.mean())
+    mn_last = float(d[-12:].mean()) if len(d) >= 12 else float(d.mean())
+    s = supply_fc["forecast"].to_numpy(dtype=float)
+    sn1 = float(s[:12].mean()) if len(s) >= 12 else float(s.mean())
+    sn_last = float(s[-12:].mean()) if len(s) >= 12 else float(s.mean())
 
     lines = [
         "",
         "=" * 70,
-        "FORECAST CONFIDENCE INTERVAL ASSESSMENT",
+        "FORECAST NOTE (POINT PROJECTION ONLY)",
         "=" * 70,
-        f"Training data:   2010-01 to 2025-12 (up to 180 monthly observations)",
-        f"Forecast horizon: {FORECAST_MONTHS} months ({FORECAST_MONTHS // 12} years)",
-        f"Model:           SARIMA{SARIMA_ORDER}x{SARIMA_SEASONAL_ORDER} (monthly seasonality)",
+        f"Training span: monthly series through the latest date in filled demand/supply tables.",
+        f"Forecast horizon: {FORECAST_MONTHS} months ({FORECAST_MONTHS // 12} years).",
+        f"Model: SARIMAX with SARIMA{SARIMA_ORDER}x{SARIMA_SEASONAL_ORDER} (seasonal period 12).",
         "",
-        "─── Credibility by year (demand, 95% CI) ─────────────────────────────",
-        "  NOTE: Confidence decreases with distance from training data.",
-        "  Near-term forecasts (years 1-3) are significantly more reliable.",
-    ] + fc_years + [
+        "Outputs are **mean forecasts only** (columns: date, forecast).",
+        "Predictive-interval columns were removed — the ABM consumes the point trajectory.",
         "",
-        "─── 10-year (120-month) forecast overall ─────────────────────────────",
-        f"  Demand 95% CI half-width (all-period mean): "
-        f"{((demand_fc['ci95_upper'] - demand_fc['ci95_lower']) / 2).mean():.1f}",
-        f"  Supply 95% CI half-width (all-period mean): "
-        f"{((supply_fc['ci95_upper'] - supply_fc['ci95_lower']) / 2).mean():.1f}",
-        "  Years 1-5: use for planning.  Years 6-10: use as scenario bounds only.",
+        "─── Sanity check on level shift (means of forecast path) ────────────",
+        f"  Demand:  avg year-1 slice ≈ {mn1:.1f}  →  avg final-year slice ≈ {mn_last:.1f}",
+        f"  Supply:  avg year-1 slice ≈ {sn1:.1f}  →  avg final-year slice ≈ {sn_last:.1f}",
         "",
-        "─── 50-year (600-month) forecast ─────────────────────────────────────",
-        "  Validity: NOT STATISTICALLY MEANINGFUL.",
-        "  Reasons:",
-        "  1. SARIMA CIs grow as O(√h) — after 600 steps the CI spans multiple",
-        "     times the historical mean.",
-        "  2. The model cannot capture structural breaks (e.g., energy transition,",
-        "     carbon neutrality policy, major recessions).",
-        "  3. China's electricity demand growth rate has itself changed several",
-        "     times over 2010-2025; extrapolating 50 years is unreliable.",
-        "  Recommendation: Use scenario-based analysis (e.g., IEA NZE, STEPS,",
-        "  APS pathways) for horizons beyond 10 years.",
+        "Limitations: SARIMAX cannot guarantee future structural breaks, policy shocks,",
+        "or technology mix changes; distant years are exploratory trend/season extrapolation.",
         "=" * 70,
     ]
     catalog_path = REPORT_DIR / "output_catalog.txt"
     existing = catalog_path.read_text(encoding="utf-8") if catalog_path.exists() else ""
-    marker = "\n======================================================================\nFORECAST CONFIDENCE INTERVAL ASSESSMENT\n"
+    marker = "\n======================================================================\nFORECAST NOTE (POINT PROJECTION ONLY)\n"
     if marker in existing:
         existing = existing.split(marker, 1)[0].rstrip() + "\n"
+    # Also strip legacy CI assessment block title if present
+    legacy = "\n======================================================================\nFORECAST CONFIDENCE INTERVAL ASSESSMENT\n"
+    if legacy in existing:
+        existing = existing.split(legacy, 1)[0].rstrip() + "\n"
+
     catalog_path.write_text(existing.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
 
     old_path = REPORT_DIR / "forecast_assessment.txt"
     if old_path.exists():
         old_path.unlink()
 
-    print(f"[2e] Assessment appended to {catalog_path}")
+    print(f"[2e] Forecast note appended to {catalog_path}")
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
@@ -218,12 +135,8 @@ def main() -> None:
 
     print(f"[2e] Forecasting {FORECAST_MONTHS} months ahead …")
 
-    if HAS_STATSMODELS:
-        dem_fc  = sarima_forecast(demand_df["total_demand"], FORECAST_MONTHS, "demand")
-        sup_fc  = sarima_forecast(supply_df["total_supply"], FORECAST_MONTHS, "supply")
-    else:
-        dem_fc = fallback_forecast(demand_df["total_demand"], FORECAST_MONTHS)
-        sup_fc = fallback_forecast(supply_df["total_supply"], FORECAST_MONTHS)
+    dem_fc = sarima_forecast(demand_df["total_demand"], FORECAST_MONTHS, "demand")
+    sup_fc = sarima_forecast(supply_df["total_supply"], FORECAST_MONTHS, "supply")
 
     # ── outputs ────────────────────────────────────────────────────────────────
     dem_fc.reset_index().to_csv(AL_DIR / "forecast_demand.csv", index=False, encoding="utf-8-sig")
