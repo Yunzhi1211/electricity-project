@@ -184,9 +184,6 @@ pip install pandas numpy openpyxl xlrd scikit-learn statsmodels
 
 ## Update log
 
-### 2026-05-06
-- English README: single repository layout section; removed “Two ABM Scenarios (Professor Feedback)” subsection; tightened overview text.
-
 ### 2026-05-05
 - `main_pipeline.py` calls `2f_build_provincial_monthly.py` and optional `2g_*`; removes broken `2f_3d_visualization.py`; preserves forecasts and provincial CSV in `4_output_anylogic/`.
 - README de-duplicated: provincial map CSV, calibration export, optimization vs simulation.
